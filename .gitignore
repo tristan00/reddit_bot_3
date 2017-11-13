@@ -1,0 +1,12 @@
+
+*.md
+*.db
+*.db-journal
+*.csv
+*.db-journal
+*.db
+models/checkpoint
+*.data-00000-of-00001
+*.index
+*.meta
+*.pyc
