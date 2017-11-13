@@ -12,7 +12,7 @@ import nltk
 import numpy as np
 import tensorflow as tf
 
-from reddit_bot2.sentiment_classifier import DNN_sentiment_classifier
+from sentiment_classifier import DNN_sentiment_classifier
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 #TODO: store ngrams in db to allow model storing
 
 nodes_per_layer = 2000
-max_results_to_analyze = 1000000
+max_results_to_analyze = 1000000000
 get_newest_results = True #if i cut out some results, this will only get newer results keeping my bot more updated in the meta
 stop_word_list = list(nltk.corpus.stopwords.words('english'))
 num_of_score_buckets = 10
@@ -86,7 +86,7 @@ class DNN_comment_classifier():
 
     def train_neural_network(self, epochs, optimizer, cost, x, y, sess, prediction, sentiment_classifier):
         start_time = time.time()
-        batch_size = 10
+        batch_size = 100
         hm_epochs = epochs
         inputs = get_db_input()
         random.shuffle(inputs)
@@ -106,7 +106,7 @@ class DNN_comment_classifier():
                 _, c = sess.run([optimizer, cost], feed_dict= {x:batch_x, y:batch_y})
                 epoch_loss += c
                 i += batch_size
-                logger.info("Batch {0} of epoch {1} completed, loss: {2}, time:{3}".format(i/batch_size, epoch, c, time.time() - start_time))
+                #logger.info("Batch {0} of epoch {1} completed, loss: {2}, time:{3}".format(i/batch_size, epoch, c, time.time() - start_time))
             logger.info("Epoch {0} completed out of {1}, loss: {2}".format(epoch, hm_epochs,epoch_loss))
         correct = tf.equal(tf.argmax(prediction, 1), tf.argmax(y, 1))
         accuracy = tf.reduce_mean(tf.cast(correct, 'float'))
@@ -114,17 +114,11 @@ class DNN_comment_classifier():
         print('Accuracy:', accuracy_float)
         return sess, prediction, x, y
 
-<<<<<<< HEAD
-    def create_feature_sets_and_labels(self, inputs, sentiment_classifier, test_size = .001):
-=======
-    def create_feature_sets_and_labels(self, inputs, test_size = .01):
->>>>>>> parent of 29b5284... update
+    def create_feature_sets_and_labels(self, inputs, sentiment_classifier, test_size = .01):
         random.shuffle(inputs)
         feature_list = []
-
         for i in inputs:
             feature_list.append([self.create_input_features(i, sentiment_classifier), self.create_output_features(i)])
-
         testing_size = int(test_size*len(inputs))
         train_x = [i[0] for i in feature_list[testing_size:]]
         train_y = [i[1] for i in feature_list[testing_size:]]
@@ -220,6 +214,12 @@ def get_text_features(text, n_gram_dict):
             index+= 1
     return word_features
 
+def get_subreddit_features(subreddit, subreddit_list):
+    subreddit_features = np.zeros(len(subreddit_list)) #[0 for i in range(len(subreddit_list))]
+    subreddit_features[subreddit_list.index(subreddit)] = 1
+    return subreddit_features
+
+#Helper methods:
 def format_text(input_text):
     return ' '.join(clean_and_tokenize(input_text))
 
@@ -227,12 +227,6 @@ def clean_and_tokenize(input_text):
     clean_text = remove_punctuation_from_text(input_text.lower())
     return remove_stopwords_from_list(nltk.tokenize.word_tokenize(clean_text))
 
-def get_subreddit_features(subreddit, subreddit_list):
-    subreddit_features = np.zeros(len(subreddit_list)) #[0 for i in range(len(subreddit_list))]
-    subreddit_features[subreddit_list.index(subreddit)] = 1
-    return subreddit_features
-
-#Helper methods:
 def remove_stopwords_from_list(input_list):
     results = []
     for i in input_list:
@@ -244,6 +238,12 @@ def remove_punctuation_from_text(input_text):
     exclude = set(string.punctuation)
     return ''.join(ch for ch in input_text if ch not in exclude)
 
+def remove_stopwords_from_list(input_list):
+    results = []
+    for i in input_list:
+        if i not in stop_word_list:
+            results.append(i)
+    return results
 
 def get_subreddit_features(subreddit, subreddit_list):
     subreddit_features = np.zeros(len(subreddit_list)) #[0 for i in range(len(subreddit_list))]
@@ -251,12 +251,7 @@ def get_subreddit_features(subreddit, subreddit_list):
     return subreddit_features
 
 #Helper methods:
-def remove_stopwords(input_list):
-    results = []
-    for i in input_list:
-        if i not in stop_word_list:
-            results.append(i)
-    return results
+
 
 def get_dict_keys_sorted_by_values(d, number_to_return, reverse = True):
     sorting_list = []

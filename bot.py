@@ -16,7 +16,9 @@ subreddit_names_to_follow = ['memes', 'catsstandingup', 'wholesomememes',
                              'dota2', 'trees', 'politics', 'science', 'jokes',
                              'gaming', 'futurology', 'wtf', 'programming', '4chan'
                              'creepy', 'music', '4chan', 'madlads', 'imgoingtohellforthis',
-                             'nsfw_gif', 'watchpeopledie', 'rule34', 'quityourbullship']
+                             'nsfw_gif', 'watchpeopledie', 'rule34', 'quityourbullship',
+                             'sports', 'nosleep', 'fitness', 'getmotivated', 'adviceanimals',
+                             'europe', 'the_donald', 'latestagecapitalism', 'pubattlegrounds']
 random.shuffle(subreddit_names_to_follow)
 user_name = None
 

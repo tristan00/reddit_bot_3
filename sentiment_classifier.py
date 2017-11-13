@@ -20,12 +20,8 @@ logger = logging.getLogger(__name__)
 #TODO: store ngrams in db to allow model storing
 
 nodes_per_layer = 2000
-<<<<<<< HEAD
-max_results = 1000000
-=======
-max_results_to_analyze = 10000000
+max_results_to_analyze = 1000000000
 get_newest_results = True #if i cut out some results, this will only get newer results keeping my bot more updated in the meta
->>>>>>> parent of 29b5284... update
 stop_word_list = list(nltk.corpus.stopwords.words('english'))
 num_of_score_buckets = 10
 num_of_features_per_n = 200
@@ -33,7 +29,7 @@ num_of_n_for_ngram = 5
 subreddit_list = []
 
 n_classes = 2
-model_name = "sentiment_model_5L_test.ckpt"
+model_name = "sentiment_model_5L_final.ckpt"
 temp_model_name= "/tmp/sentiment_model_5L_final.ckpt"
 current_directory = os.getcwd()
 final_directory = os.path.join(current_directory, r'models')
@@ -42,29 +38,18 @@ if not os.path.exists(final_directory):
 model_location = os.path.join(final_directory, model_name)
 
 class DNN_sentiment_classifier():
-<<<<<<< HEAD
 
-    def __init__(self, save_model = True):
-=======
-    def __init__(self):
->>>>>>> parent of 29b5284... update
+    def __init__(self, save_model = True, load_eligible = True):
         self.model_needs_retraining = False
         self.border_values = [] # any num above this
         self.n_gram_orders_dict = {}
         #self.input_width = self.get_input_size()
         self.input_width = num_of_features_per_n*(num_of_n_for_ngram - 1)
-        self.optimizer, self.cost, self.x, self.y, self.sess, self.prediction, self.saver = self.build_neural_network()
+        self.optimizer, self.cost, self.x, self.y, self.sess, self.prediction, self.saver = self.build_neural_network(load_eligible = load_eligible)
         self.save_enabled = save_model
-        #self.train_nn(5)
 
         if self.model_needs_retraining:
-<<<<<<< HEAD
-            print(model_location)
-            #raise Exception('Cannot find model')
             self.train_nn(20)
-=======
-            self.train_nn(5)
->>>>>>> parent of 29b5284... update
 
     def run_text(self, text):
         input_features = self.create_input_features(text)
@@ -83,13 +68,12 @@ class DNN_sentiment_classifier():
             print("Model saved in file: %s" % save_path)
 
     def load_model(self, saver, sess):
-
         if not os.path.exists(final_directory):
            os.makedirs(final_directory)
         saver.restore(sess, model_location)
         self.load_ngrams()
 
-    def build_neural_network(self):
+    def build_neural_network(self, load_eligible = True):
         start_time = time.time()
         #data = tf.placeholder('float')
         x = tf.placeholder('float', [None, self.input_width])
@@ -99,13 +83,19 @@ class DNN_sentiment_classifier():
         optimizer = tf.train.AdamOptimizer().minimize(cost)
         saver = tf.train.Saver()
         sess = tf.Session()
-        try:
-            self.load_model(saver, sess)
-        except:
+        if load_eligible:
+            try:
+                self.load_model(saver, sess)
+            except:
+                print('initializing')
+                traceback.print_exc()
+                sess.run(tf.global_variables_initializer())
+                self.model_needs_retraining = True
+        else:
             print('initializing')
-            traceback.print_exc()
             sess.run(tf.global_variables_initializer())
             self.model_needs_retraining = True
+
         return optimizer, cost, x, y, sess, prediction,saver
 
     def neural_network_model(self, nodes_per_layer, x):
@@ -136,12 +126,7 @@ class DNN_sentiment_classifier():
         return output
 
     def train_neural_network(self, epochs, optimizer, cost, x, y, sess, prediction):
-<<<<<<< HEAD
-        batch_size = 1000
-=======
-        start_time = time.time()
-        batch_size = 10
->>>>>>> parent of 29b5284... update
+        batch_size = 100
         hm_epochs = epochs
         inputs = get_input()
         random.shuffle(inputs)
@@ -209,21 +194,13 @@ class DNN_sentiment_classifier():
         res = get_input()
         comments = []
         for r in res:
-<<<<<<< HEAD
-            #print(clean_and_tokenize(r[0]))
             comments.append(clean_and_tokenize(r[0]))
-=======
-            formatted_word = ' '.join(remove_stopwords(nltk.tokenize.word_tokenize(r[0].lower())))
-            exclude = set(string.punctuation)
-            formatted_word = ''.join(ch for ch in formatted_word if ch not in exclude)
-            comments.append(tuple(remove_stopwords(nltk.tokenize.word_tokenize(formatted_word))))
->>>>>>> parent of 29b5284... update
         for comment in comments:
             for n in range(1, max_n):
                 if len(comment) >= n:
                     for i in range(len(comment) - n):
-                        current_value = n_gram_dicts[n].get(tuple(comment[i:i+n]), 0)
-                        n_gram_dicts[n][tuple(comment[i:i+n])] = current_value + 1
+                        current_value = n_gram_dicts[n].get(' '.join(comment[i:i+n]), 0)
+                        n_gram_dicts[n][' '.join(comment[i:i+n])] = current_value + 1
                 else:
                     break
         for n in range(1, max_n):
@@ -258,27 +235,42 @@ class DNN_sentiment_classifier():
                     self.n_gram_orders_dict[n][r] = conn.execute('''select word from sentiment_table_values where rank = ? and n = ?''', (r, n)).fetchone()[0]
 
 #Feature creation methods:
-def create_timestamp_features(timestamp):
-    datetime_timestamp = datetime.datetime.utcfromtimestamp(float(timestamp))
-    hour_feature = [0 for i in range(24)]
-    week_day_feature = [0 for i in range(7)]
-    hour_feature[datetime_timestamp.hour] = 1
-    week_day_feature[datetime_timestamp.weekday()] = 1
-    np_array =  np.asarray(hour_feature + week_day_feature)
-    return np_array
-
 def get_text_features(text, n_gram_dict):
     word_features = [0 for i in range(len(n_gram_dict.keys())*len(n_gram_dict[1]))]
     index = 0
-    formatted_word = ' '.join(remove_stopwords(nltk.tokenize.word_tokenize(text.lower())))
-    exclude = set(string.punctuation)
-    formatted_word = ''.join(ch for ch in formatted_word if ch not in exclude)
+
+    formatted_word = format_text(text)
     for n in n_gram_dict.keys():
         for i in n_gram_dict[n]:
-            if ' '.join(i) in formatted_word:
+            if i in formatted_word:
                 word_features[index] = 1
             index+= 1
     return word_features
+
+def format_text(input_text):
+    return ' '.join(clean_and_tokenize(input_text))
+
+def clean_and_tokenize(input_text):
+    clean_text = remove_punctuation_from_text(input_text.lower())
+    return remove_stopwords_from_list(nltk.tokenize.word_tokenize(clean_text))
+
+def remove_stopwords_from_list(input_list):
+    results = []
+    for i in input_list:
+        if i not in stop_word_list:
+            results.append(i)
+    return results
+
+def remove_punctuation_from_text(input_text):
+    exclude = set(string.punctuation)
+    return ''.join(ch for ch in input_text if ch not in exclude)
+
+def remove_stopwords_from_list(input_list):
+    results = []
+    for i in input_list:
+        if i not in stop_word_list:
+            results.append(i)
+    return results
 
 def get_subreddit_features(subreddit, subreddit_list):
     subreddit_features = np.zeros(len(subreddit_list)) #[0 for i in range(len(subreddit_list))]
@@ -286,7 +278,7 @@ def get_subreddit_features(subreddit, subreddit_list):
     return subreddit_features
 
 #Helper methods:
-def remove_stopwords(input_list):
+def remove_stopwords_from_list(input_list):
     results = []
     for i in input_list:
         if i not in stop_word_list:
@@ -308,7 +300,7 @@ def get_input():
     df = pd.read_csv('SAD.csv', error_bad_lines=False)
     for index, row in df.iterrows():
         count += 1
-        if count > max_results:
+        if count > max_results_to_analyze:
             break
         inputs.append([row[3], row[1]])
 
