@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 #TODO: store ngrams in db to allow model storing
 
 nodes_per_layer = 2000
-max_results_to_analyze = 1000000000
+max_results_to_analyze = 10000000
 get_newest_results = True #if i cut out some results, this will only get newer results keeping my bot more updated in the meta
 stop_word_list = list(nltk.corpus.stopwords.words('english'))
 num_of_score_buckets = 10
@@ -35,7 +35,7 @@ class DNN_comment_classifier():
         self.border_values = [] # any num above this
         self.n_gram_orders_dict = {}
         #self.input_width = self.get_input_size()
-        self.input_width = 733
+        self.input_width = 737
         self.optimizer, self.cost, self.x, self.y, self.sess, self.prediction = self.build_neural_network()
 
     def run_input(self, i):
@@ -71,6 +71,7 @@ class DNN_comment_classifier():
         output_layer = {'weights': tf.Variable(tf.random_normal([nodes_per_layer, n_classes])),
                             'biases': tf.Variable(tf.random_normal([n_classes]))}
 
+        keep_prob = .5
         l1 = tf.add(tf.matmul(x, hidden_1_layer['weights']), hidden_1_layer['biases'])
         l1 = tf.nn.relu(l1)
         l2 = tf.add(tf.matmul(l1, hidden_2_layer['weights']), hidden_2_layer['biases'])
@@ -79,9 +80,11 @@ class DNN_comment_classifier():
         l3 = tf.nn.relu(l3)
         l4 = tf.add(tf.matmul(l3, hidden_4_layer['weights']), hidden_4_layer['biases'])
         l4 = tf.nn.relu(l4)
-        l5 = tf.add(tf.matmul(l4, hidden_5_layer['weights']), hidden_5_layer['biases'])
+        l4_dropout = tf.nn.dropout(l4, keep_prob)
+        l5 = tf.add(tf.matmul(l4_dropout, hidden_5_layer['weights']), hidden_5_layer['biases'])
         l5 = tf.nn.relu(l5)
-        output = tf.matmul(l5, output_layer['weights']) +  output_layer['biases']
+        l5_dropout = tf.nn.dropout(l5, keep_prob)
+        output = tf.matmul(l5_dropout, output_layer['weights']) +  output_layer['biases']
         return output
 
     def train_neural_network(self, epochs, optimizer, cost, x, y, sess, prediction, sentiment_classifier):

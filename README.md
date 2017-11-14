@@ -13,10 +13,18 @@ sentiment_classifier.py: basic sentiment classifier
 
 bot_detection_classifier.py: Adverserial network trained to detect my bot. Manager will consider this input when picking comment.
 
-topic_classifier.py: k means, lsa or other to classify content by topic, will be used as inputs to other models
+topic_classifier.py: clustering, lsa, lda or other to classify content by topic, will be used as inputs to other models
 
 TODO:
+Build more text analysis tools for use in models
+-text complexity
+
+figure out hw to remove dropouts for testing
+
 build topic classifier
+
 allow success classifier saving
+
 build bot_detection_classifier
+
 replace success classifier with generative model

@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 #TODO: store ngrams in db to allow model storing
 
 nodes_per_layer = 2000
-max_results_to_analyze = 1000000000
+max_results_to_analyze = 10000000
 get_newest_results = True #if i cut out some results, this will only get newer results keeping my bot more updated in the meta
 stop_word_list = list(nltk.corpus.stopwords.words('english'))
 num_of_score_buckets = 10
@@ -49,7 +49,7 @@ class DNN_sentiment_classifier():
         self.save_enabled = save_model
 
         if self.model_needs_retraining:
-            self.train_nn(20)
+            self.train_nn(30)
 
     def run_text(self, text):
         input_features = self.create_input_features(text)
@@ -78,6 +78,7 @@ class DNN_sentiment_classifier():
         #data = tf.placeholder('float')
         x = tf.placeholder('float', [None, self.input_width])
         y = tf.placeholder('float', [None, n_classes])
+        keep_prob = tf.placeholder(tf.float32)
         prediction = self.neural_network_model(nodes_per_layer, x)
         cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=prediction, labels=y))
         optimizer = tf.train.AdamOptimizer().minimize(cost)
@@ -112,6 +113,9 @@ class DNN_sentiment_classifier():
         output_layer = {'weights': tf.Variable(tf.random_normal([nodes_per_layer, n_classes])),
                             'biases': tf.Variable(tf.random_normal([n_classes]))}
 
+
+
+        keep_prob = .5
         l1 = tf.add(tf.matmul(x, hidden_1_layer['weights']), hidden_1_layer['biases'])
         l1 = tf.nn.relu(l1)
         l2 = tf.add(tf.matmul(l1, hidden_2_layer['weights']), hidden_2_layer['biases'])
@@ -120,9 +124,12 @@ class DNN_sentiment_classifier():
         l3 = tf.nn.relu(l3)
         l4 = tf.add(tf.matmul(l3, hidden_4_layer['weights']), hidden_4_layer['biases'])
         l4 = tf.nn.relu(l4)
-        l5 = tf.add(tf.matmul(l4, hidden_5_layer['weights']), hidden_5_layer['biases'])
+        l4_dropout = tf.nn.dropout(l4, keep_prob)
+        l5 = tf.add(tf.matmul(l4_dropout, hidden_5_layer['weights']), hidden_5_layer['biases'])
         l5 = tf.nn.relu(l5)
-        output = tf.matmul(l5, output_layer['weights']) +  output_layer['biases']
+        l5_dropout = tf.nn.dropout(l5, keep_prob)
+        output = tf.matmul(l5_dropout, output_layer['weights']) +  output_layer['biases']
+
         return output
 
     def train_neural_network(self, epochs, optimizer, cost, x, y, sess, prediction):
@@ -139,7 +146,6 @@ class DNN_sentiment_classifier():
             epoch_loss = 0
             i=0
             while i < len(train_x):
-
                 start = i
                 end = i + batch_size
                 batch_x = np.array(train_x[start:end])
@@ -308,6 +314,6 @@ def get_input():
 
 #testing
 if __name__ == '__main__':
-    sentiment_classifier = DNN_sentiment_classifier()
+    sentiment_classifier = DNN_sentiment_classifier(save_model=False, load_eligible=False)
 
 
