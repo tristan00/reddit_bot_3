@@ -12,8 +12,6 @@ import nltk
 import numpy as np
 import tensorflow as tf
 
-from sentiment_classifier import DNN_sentiment_classifier
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -35,7 +33,7 @@ class DNN_comment_classifier():
         self.border_values = [] # any num above this
         self.n_gram_orders_dict = {}
         #self.input_width = self.get_input_size()
-        self.input_width = 737
+        self.input_width = 744
         self.optimizer, self.cost, self.x, self.y, self.sess, self.prediction = self.build_neural_network()
 
     def run_input(self, i):
@@ -78,7 +76,8 @@ class DNN_comment_classifier():
         l2 = tf.nn.relu(l2)
         l3 = tf.add(tf.matmul(l2, hidden_3_layer['weights']), hidden_3_layer['biases'])
         l3 = tf.nn.relu(l3)
-        l4 = tf.add(tf.matmul(l3, hidden_4_layer['weights']), hidden_4_layer['biases'])
+        l3_dropout = tf.nn.dropout(l3, keep_prob)
+        l4 = tf.add(tf.matmul(l3_dropout, hidden_4_layer['weights']), hidden_4_layer['biases'])
         l4 = tf.nn.relu(l4)
         l4_dropout = tf.nn.dropout(l4, keep_prob)
         l5 = tf.add(tf.matmul(l4_dropout, hidden_5_layer['weights']), hidden_5_layer['biases'])
@@ -189,11 +188,8 @@ class DNN_comment_classifier():
         self.border_values = get_border_values(num_of_score_buckets, score_list)
 
     def get_sentiment_classification(self, text, sentiment_classifier):
-        result = sentiment_classifier.run_text([text, 0])
-        if result[0][0] > result[0][1]:
-            return [1, 0]
-        else:
-            return [0, 1]
+        return sentiment_classifier.predict(text)
+
 
 #Feature creation methods:
 def create_timestamp_features(timestamp):
@@ -296,6 +292,5 @@ def get_subreddit_list():
 if __name__ == '__main__':
     dnn = DNN_comment_classifier()
     print('here')
-    dnn.train_nn(5, DNN_sentiment_classifier(save_model=False))
 
 

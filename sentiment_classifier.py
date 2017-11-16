@@ -37,7 +37,7 @@ if not os.path.exists(final_directory):
    os.makedirs(final_directory)
 model_location = os.path.join(final_directory, model_name)
 
-class DNN_sentiment_classifier():
+class NB_sentiment_classifier():
 
     def __init__(self, save_model = True, load_eligible = True):
         self.model_needs_retraining = False
@@ -46,10 +46,7 @@ class DNN_sentiment_classifier():
         #self.input_width = self.get_input_size()
         self.input_width = num_of_features_per_n*(num_of_n_for_ngram - 1)
         self.optimizer, self.cost, self.x, self.y, self.sess, self.prediction, self.saver = self.build_neural_network(load_eligible = load_eligible)
-        self.save_enabled = save_model
 
-        if self.model_needs_retraining:
-            self.train_nn(30)
 
     def run_text(self, text):
         input_features = self.create_input_features(text)

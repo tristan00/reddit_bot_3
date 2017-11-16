@@ -16,6 +16,8 @@ bot_detection_classifier.py: Adverserial network trained to detect my bot. Manag
 topic_classifier.py: clustering, lsa, lda or other to classify content by topic, will be used as inputs to other models
 
 TODO:
+Replace sentiment analysis algorithm with naive bayes
+
 Build more text analysis tools for use in models
 -text complexity
 

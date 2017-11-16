@@ -14,7 +14,7 @@ subreddit_names_to_follow = ['memes', 'catsstandingup', 'wholesomememes',
                              'iamverysmart', 'pcmasterrace', 'atheism', 'comedycemetary',
                              'totallyhuman', 'globaloffensive', 'tifu', 'actlikeyoubelong',
                              'dota2', 'trees', 'politics', 'science', 'jokes',
-                             'gaming', 'futurology', 'wtf', 'programming', '4chan'
+                             'gaming', 'futurology', 'wtf', 'programming',
                              'creepy', 'music', '4chan', 'madlads', 'imgoingtohellforthis',
                              'nsfw_gif', 'watchpeopledie', 'rule34', 'quityourbullship',
                              'sports', 'nosleep', 'fitness', 'getmotivated', 'adviceanimals',
@@ -125,7 +125,7 @@ def get_new_posts(reddit_agent):
     logger.info('New data collected')
 
 #get a number of past post ids by sampling the full list, updates the data
-def update_stored_posts(reddit_agent, num_of_posts=100):
+def update_stored_posts(reddit_agent, num_of_posts=10000):
     with sqlite3.connect('reddit.db') as conn:
         post_ids = conn.execute('select p_id from posts').fetchall()
         try:
