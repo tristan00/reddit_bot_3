@@ -58,7 +58,7 @@ def main(train_comment_classifier = False):
 
     if train_comment_classifier:
         comment_classifier = DNN_comment_classifier(num_of_topics, num_of_topics_recorded, retrain = True)
-        comment_classifier.train_nn(10, nb_sentiment_model, lda_topic_model)
+        comment_classifier.train_nn(5, nb_sentiment_model, lda_topic_model)
     bot.main()
 
 if __name__ == '__main__':

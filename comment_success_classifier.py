@@ -156,7 +156,7 @@ class DNN_comment_classifier():
         correct = tf.equal(tf.argmax(prediction, 1), tf.argmax(y, 1))
         accuracy = tf.reduce_mean(tf.cast(correct, 'float'))
         accuracy_float = accuracy.eval(session = sess, feed_dict = {x:test_x, y:test_y, 'keep_prob':1})
-        print('Accuracy:', accuracy_float)
+        logger.info(('Accuracy:', accuracy_float))
         self.save_model()
         return sess, prediction, x, y
 
@@ -265,7 +265,7 @@ class DNN_comment_classifier():
     def get_topic_classification(self, text, topic_model, num_of_topics, tokenized = False):
         results = topic_model.get_topic(text, minimum_probability = self.topic_minimum_probability_threshold, tokenized=tokenized)
         result_vector = [0 for i in range(num_of_topics)]
-        
+
         for r in results:
             result_vector[r[0]] = 1
         return result_vector
@@ -360,12 +360,13 @@ def get_db_input():
         res = conn.execute('''select *
     from comments a join comments b on a.c_id = b.parent_id
     join posts c on a.p_id = c.p_id order by b.submitted_timestamp desc''').fetchall()
-        print(len(res))
+        logger.info('len of input = '.format(len(res)))
         if get_newest_results or max_results_to_analyze > len(res):
-            return res[:max_results_to_analyze]
+            output =  res[:max_results_to_analyze]
         else:
             random.shuffle(res)
-            return res[:max_results_to_analyze]
+            output =  res[:max_results_to_analyze]
+        return output
 
 def get_subreddit_list():
     global subreddit_list
