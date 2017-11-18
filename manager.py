@@ -9,8 +9,6 @@ import datetime
 import numpy as np
 from data_manager import Reddit_Memoization
 
-data_memoization = Reddit_Memoization()
-
 logger = logging.getLogger(__name__)
 logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=logging.INFO)
 
@@ -20,6 +18,8 @@ min_comment_success_threashold = .95
 max_comments_to_sample_from = 250000
 comments_to_consider_per_post = 10000
 comment_pool = []
+num_of_topics = 100
+num_of_topics_recorded = 5 #records up to top 5 probable topics
 
 def get_comment_results(comment_classifier, parent_text, parent_time_stamp, title, title_time_stamp, subreddit, child_text, child_time_stamp, sentiment_classifier, topic_model):
     return comment_classifier.create_input_feature_from_text(title, parent_text, child_text, title_time_stamp, parent_time_stamp, child_time_stamp, subreddit, sentiment_classifier, topic_model)
@@ -53,14 +53,13 @@ def evaluate_comments(comment_classifier, nb_sentiment_model, lda_topic_model):
             pass
 
 def main(train_comment_classifier = False):
-    nb_sentiment_model = NBsentimentClassifier(data_memoization)
-    lda_topic_model = Reddit_LDA_Model(data_memoization)
+    nb_sentiment_model = NBsentimentClassifier()
+    lda_topic_model = Reddit_LDA_Model(num_of_topics)
 
     if train_comment_classifier:
-        comment_classifier = DNN_comment_classifier(data_memoization, retrain = True)
+        comment_classifier = DNN_comment_classifier(num_of_topics, num_of_topics_recorded, retrain = True)
         comment_classifier.train_nn(10, nb_sentiment_model, lda_topic_model)
     bot.main()
-
 
 if __name__ == '__main__':
     main(train_comment_classifier=True)

@@ -20,8 +20,7 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=logging.INFO)
 
 class NBsentimentClassifier():
-    def __init__(self, data_memoization):
-        self.data_memoization = data_memoization
+    def __init__(self):
         self.classifier = None
         #self.create_sets()
         try:
@@ -47,12 +46,15 @@ class NBsentimentClassifier():
         logger.info(nltk.classify.accuracy(self.classifier , testing_inputs))
         self.save_classifier()
 
-    def predict(self, input):
-        features = self.transform_sentence_to_input((input, None), self.common_words)
-        if self.classifier.classify(features[0]) == 1:
-            return [1, 0]
+    def predict(self, input, tokenized=False):
+        if tokenized:
+            pass
         else:
-            return [0, 1]
+            features = self.transform_sentence_to_input((input, None), self.common_words, tokenized=tokenized)
+            if self.classifier.classify(features[0]) == 1:
+                return [1, 0]
+            else:
+                return [0, 1]
 
     def save_classifier(self):
         with open('models/sentiment_classifier.pickle', 'wb') as f1:
@@ -76,13 +78,16 @@ class NBsentimentClassifier():
         for count, i in enumerate(inputs):
             if count % 1000 == 0:
                 logger.info('processed: {0}'.format(count))
-            t_inputs.append(self.transform_sentence_to_input(i, common_word_set))
+            t_inputs.append(self.transform_sentence_to_input(i, common_word_set, tokenized = False))
         return t_inputs
 
-    def transform_sentence_to_input(self, inputs, common_words_set ):
+    def transform_sentence_to_input(self, inputs, common_words_set, tokenized = False):
         result = dict.fromkeys(common_words_set, False)
-
-        for j in self.data_memoization.clean_and_tokenize(inputs[0]):
+        if tokenized:
+            processed_input = inputs
+        else:
+            processed_input = self.clean_and_tokenize(inputs[0])
+        for j in processed_input:
             if j in common_words_set:
                 result[j] =True
         return (result, inputs[1])

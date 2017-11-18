@@ -17,12 +17,12 @@ topic_classifier.py: clustering, lsa, lda or other to classify content by topic,
 
 TODO:
 
-Build gensim topic model
-
 Build more text analysis tools for use in models
 -text complexity
 
-build manager bot handling lgic
+build manager bot handling logic
+
+implement bot multiprocessing, bot can collect reddit data which is low intensity task while models train or pick comments to write
 
 build generators for dictionary use, figure out how to avoid deadlocks (secondary dicts?)
 
