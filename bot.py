@@ -16,10 +16,9 @@ subreddit_names_to_follow = ['memes', 'catsstandingup', 'wholesomememes',
                              'dota2', 'trees', 'politics', 'science', 'jokes',
                              'gaming', 'futurology', 'wtf', 'programming',
                              'creepy', 'music', '4chan', 'madlads', 'imgoingtohellforthis',
-                             'nsfw_gif', 'watchpeopledie', 'rule34', 'quityourbullship',
+                             'nsfw_gif', 'watchpeopledie', 'rule34', 'quityourbullshit',
                              'sports', 'nosleep', 'fitness', 'getmotivated', 'adviceanimals',
                              'europe', 'the_donald', 'latestagecapitalism', 'pubattlegrounds']
-random.shuffle(subreddit_names_to_follow)
 user_name = None
 
 #for now uses first login in db
@@ -114,9 +113,13 @@ def read_and_store_subreddit_info_to_db(subreddit, write_to_db = True):
                 read_and_store_post_to_db(post, conn, write_to_db=write_to_db)
     return posts
 
-def get_new_posts(reddit_agent):
+def get_new_posts(reddit_agent, num_of_subs = 100):
     logger.info('Getting new data from selected subreddits:')
-    for i in subreddit_names_to_follow:
+    if num_of_subs < len(subreddit_names_to_follow):
+        subreddits_to_check = random.sample(subreddit_names_to_follow, num_of_subs)
+    else:
+        subreddits_to_check = subreddit_names_to_follow
+    for i in subreddits_to_check:
         try:
             read_and_store_subreddit_info_to_db(reddit_agent.subreddit(i))
             print_db_size()
@@ -125,7 +128,7 @@ def get_new_posts(reddit_agent):
     logger.info('New data collected')
 
 #get a number of past post ids by sampling the full list, updates the data
-def update_stored_posts(reddit_agent, num_of_posts=10000):
+def update_stored_posts(reddit_agent, num_of_posts=1000):
     with sqlite3.connect('reddit.db') as conn:
         post_ids = conn.execute('select p_id from posts').fetchall()
         try:
@@ -147,6 +150,19 @@ def print_db_size():
         num_of_subreddits = conn.execute('select count(*) from subreddits').fetchall()[0]
         logger.info('DB size, subreddits: {0}, posts: {1}, comments:{2}'.format(num_of_subreddits[0], num_of_posts[0], num_of_comments[0]))
 
+def get_comments_for_most_recent_posts(num_of_posts = 250):
+    with sqlite3.connect('reddit.db') as conn:
+        res = conn.execute('''select a.body, a.submitted_timestamp, b.title, b.submitted_timestamp, b.s_id
+        from comments a join posts b on a.p_id = b.p_id order by b.submitted_timestamp desc''').fetchall()
+        results = []
+        for i in res:
+            results.append({'parent_body':i[0],
+                            'parent_timestamp':i[1],
+                            'post_title':i[2],
+                            'post_timestamp':i[3],
+                            's_id':i[4]})
+        return results
+
 def read_data(reddit_agent):
     update_stored_posts(reddit_agent)
     get_new_posts(reddit_agent)
@@ -159,10 +175,8 @@ def set_up():
 
 def main():
     #wipe_db()
-    for i in range(100):
-        reddit_agent = set_up()
-        read_data(reddit_agent)
-
+    reddit_agent = set_up()
+    read_data(reddit_agent)
 
 if __name__ == '__main__':
     main()

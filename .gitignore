@@ -13,3 +13,4 @@ models/checkpoint
 *.xml
 *.iml
 *.pickle
+*.pkl
