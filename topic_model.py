@@ -43,7 +43,7 @@ class Reddit_LDA_Model():
             self.lda = gensim.models.ldamodel.LdaModel(self.corpus, num_topics=num_of_topics)
             self.lda.save(lda_model_location)
 
-    def get_topic(self, text, minimum_probability = .1, tokenized=False):
+    def get_topic(self, text, minimum_probability = .01, tokenized=False):
         if tokenized:
             text_bow = self.dictionary.doc2bow(text)
             return self.lda.get_document_topics(text_bow)

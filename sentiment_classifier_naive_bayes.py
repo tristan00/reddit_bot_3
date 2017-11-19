@@ -47,14 +47,11 @@ class NBsentimentClassifier():
         self.save_classifier()
 
     def predict(self, input, tokenized=False):
-        if tokenized:
-            pass
+        features = self.transform_sentence_to_input((input, None), self.common_words, tokenized=tokenized)
+        if self.classifier.classify(features[0]) == 1:
+            return [1, 0]
         else:
-            features = self.transform_sentence_to_input((input, None), self.common_words, tokenized=tokenized)
-            if self.classifier.classify(features[0]) == 1:
-                return [1, 0]
-            else:
-                return [0, 1]
+            return [0, 1]
 
     def save_classifier(self):
         with open('models/sentiment_classifier.pickle', 'wb') as f1:

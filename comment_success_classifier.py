@@ -29,22 +29,31 @@ stop_word_set = set(stop_word_list)
 
 num_of_score_buckets = 10
 num_of_features_per_n = 50
-num_of_n_for_ngram = 5
+min_n_gram = 2
+max_n_gram = 4
+max_topic = 5
 subreddit_list = []
-model_save_location = '/models/comment_success_classifier_model_5L_final.ckpt'
+model_save_location = 'models/comment_success_classifier_model_10L_final.ckpt'
+
+
+
 
 n_classes = 10
 
 class DNN_comment_classifier():
     def __init__(self, num_of_topics, topic_minimum_probability_threshold, retrain = False):
-        self.input_width = 45+600+300+6+144
+        self.input_width = 47+450+300+6+144 #better to keep just undr a power of 2
+        self.sentiment_memoization = {}
+        self.topic_memoization = {}
+        self.n_gram_dicts = {}
         self.num_of_topics = num_of_topics
         self.topic_minimum_probability_threshold = topic_minimum_probability_threshold
         self.retrain = retrain
-        self.optimizer, self.cost, self.x, self.y, self.sess, self.prediction, self.saver  = self.build_neural_network()
+        self.sub_list = get_subreddit_list()
+        self.optimizer, self.cost, self.x, self.y, self.sess, self.prediction, self.saver, self.prob = self.build_neural_network()
 
         if retrain:
-            self.read_metadata(num_of_n_for_ngram, num_of_features_per_n)
+            self.read_metadata(num_of_features_per_n)
         else:
             self.load_metadata()
             self.load_model(self.saver, self.sess)
@@ -59,16 +68,16 @@ class DNN_comment_classifier():
     def build_neural_network(self):
         x = tf.placeholder('float', [None, self.input_width])
         y = tf.placeholder('float', [None, n_classes])
-        prediction = self.neural_network_model(nodes_per_layer, x)
+        prediction, prob = self.neural_network_model(nodes_per_layer, x)
         cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=prediction, labels=y))
         optimizer = tf.train.AdamOptimizer().minimize(cost)
-        saver = tf.train.Saver()
+        saver = tf.train.Saver(tf.global_variables())
         sess = tf.Session()
         if self.retrain:
             sess.run(tf.global_variables_initializer())
         else:
             self.load_model(saver, sess)
-        return optimizer, cost, x, y, sess, prediction, saver
+        return optimizer, cost, x, y, sess, prediction, saver, prob
 
     def neural_network_model(self, nodes_per_layer, x):
         hidden_1_layer = {'weights': tf.Variable(tf.random_normal([self.input_width, nodes_per_layer])),
@@ -95,38 +104,38 @@ class DNN_comment_classifier():
                             'biases': tf.Variable(tf.random_normal([n_classes]))}
 
         keep_prob = .5
-        keep_prob_var = tf.Variable(0.5,tf.float32, name='keep_prob')
+        prob = tf.placeholder_with_default(1.0, shape=())
         l1 = tf.add(tf.matmul(x, hidden_1_layer['weights']), hidden_1_layer['biases'])
         l1 = tf.nn.relu(l1)
         l2 = tf.add(tf.matmul(l1, hidden_2_layer['weights']), hidden_2_layer['biases'])
         l2 = tf.nn.relu(l2)
-        l2_dropout = tf.nn.dropout(l2, keep_prob_var)
+        l2_dropout = tf.nn.dropout(l2, prob)
         l3 = tf.add(tf.matmul(l2_dropout, hidden_3_layer['weights']), hidden_3_layer['biases'])
         l3 = tf.nn.relu(l3)
-        l3_dropout = tf.nn.dropout(l3, keep_prob_var)
+        l3_dropout = tf.nn.dropout(l3, prob)
         l4 = tf.add(tf.matmul(l3_dropout, hidden_4_layer['weights']), hidden_4_layer['biases'])
         l4 = tf.nn.relu(l4)
-        l4_dropout = tf.nn.dropout(l4, keep_prob_var)
+        l4_dropout = tf.nn.dropout(l4, prob)
         l5 = tf.add(tf.matmul(l4_dropout, hidden_5_layer['weights']), hidden_5_layer['biases'])
         l5 = tf.nn.relu(l5)
-        l5_dropout = tf.nn.dropout(l5, keep_prob_var)
+        l5_dropout = tf.nn.dropout(l5, prob)
         l6 = tf.add(tf.matmul(l5_dropout, hidden_6_layer['weights']), hidden_6_layer['biases'])
         l6 = tf.nn.relu(l6)
-        l6_dropout = tf.nn.dropout(l6, keep_prob_var)
+        l6_dropout = tf.nn.dropout(l6, prob)
         l7 = tf.add(tf.matmul(l6_dropout, hidden_7_layer['weights']), hidden_7_layer['biases'])
         l7 = tf.nn.relu(l7)
-        l7_dropout = tf.nn.dropout(l7, keep_prob_var)
+        l7_dropout = tf.nn.dropout(l7, prob)
         l8 = tf.add(tf.matmul(l7_dropout, hidden_8_layer['weights']), hidden_8_layer['biases'])
         l8 = tf.nn.relu(l8)
-        l8_dropout = tf.nn.dropout(l8, keep_prob_var)
+        l8_dropout = tf.nn.dropout(l8, prob)
         l9 = tf.add(tf.matmul(l8_dropout, hidden_9_layer['weights']), hidden_9_layer['biases'])
         l9 = tf.nn.relu(l9)
-        l9_dropout = tf.nn.dropout(l9, keep_prob_var)
+        l9_dropout = tf.nn.dropout(l9, prob)
         l10 = tf.add(tf.matmul(l9_dropout, hidden_10_layer['weights']), hidden_10_layer['biases'])
         l10 = tf.nn.relu(l10)
-        l10_dropout = tf.nn.dropout(l10, keep_prob_var)
+        l10_dropout = tf.nn.dropout(l10, prob)
         output = tf.matmul(l10_dropout, output_layer['weights']) +  output_layer['biases']
-        return output
+        return output, prob
 
     def train_neural_network(self, epochs, optimizer, cost, x, y, sess, prediction, sentiment_classifier, topic_model):
         start_time = time.time()
@@ -148,14 +157,14 @@ class DNN_comment_classifier():
                 end = i + batch_size
                 batch_x = np.array(train_x[start:end])
                 batch_y = np.array(train_y[start:end])
-                _, c = sess.run([optimizer, cost], feed_dict= {x:batch_x, y:batch_y, 'keep_prob':0.5})
+                _, c = sess.run([optimizer, cost], feed_dict= {x:batch_x, y:batch_y, self.prob: 0.5})
                 epoch_loss += c
                 i += batch_size
                 logger.info("Batch {0} of epoch {1} completed, loss: {2}, time:{3}".format(i/batch_size, epoch, c, time.time() - start_time))
             logger.info("Epoch {0} completed out of {1}, loss: {2}".format(epoch, hm_epochs,epoch_loss))
         correct = tf.equal(tf.argmax(prediction, 1), tf.argmax(y, 1))
         accuracy = tf.reduce_mean(tf.cast(correct, 'float'))
-        accuracy_float = accuracy.eval(session = sess, feed_dict = {x:test_x, y:test_y, 'keep_prob':1})
+        accuracy_float = accuracy.eval(session = sess, feed_dict = {x:test_x, y:test_y, self.prob: 1.0})
         logger.info(('Accuracy:', accuracy_float))
         self.save_model()
         return sess, prediction, x, y
@@ -184,8 +193,6 @@ class DNN_comment_classifier():
         return output_array
 
     def create_input_feature_from_text(self, title, parent_text, child_text, title_time_stamp, parent_time_stamp, child_time_stamp, subreddit, sentiment_classifier, topic_model):
-        sub_list = get_subreddit_list()
-
         tokenized_title = clean_and_tokenize(title)
         tokenized_parent = clean_and_tokenize(parent_text)
         tokenized_child = clean_and_tokenize(child_text)
@@ -199,7 +206,7 @@ class DNN_comment_classifier():
         parent_timestamp_features = create_timestamp_features(parent_time_stamp)
         child_timestamp_features = create_timestamp_features(child_time_stamp)
         post_timestamp_features = create_timestamp_features(title_time_stamp)
-        subreddit_features = get_subreddit_features(subreddit ,sub_list)
+        subreddit_features = get_subreddit_features(subreddit, self.sub_list)
         parent_features = get_text_features(parent_text, self.n_gram_orders_dict, tokenized=True)
         child_features = get_text_features(child_text, self.n_gram_orders_dict, tokenized=True)
         title_features = get_text_features(title, self.n_gram_orders_dict, tokenized=True)
@@ -209,37 +216,40 @@ class DNN_comment_classifier():
         return input_features
 
     def create_input_features(self, i, sentiment_classifier, topic_model):
-        return self.create_input_feature_from_text(self, i[21], i[14], i[5], i[24], i[7], i[16], i[2], sentiment_classifier, topic_model)
+        return self.create_input_feature_from_text( i[21], i[14], i[5], i[24], i[7], i[16], i[2], sentiment_classifier, topic_model)
 
     #build ngrams and rank comments
     #for each comment, remove stopwords then place into n-grams
     #sort the ngrams by how common they are, store the most common ones
-    def read_metadata(self, max_n, num_of_features_per_n):
-        n_gram_dicts = {}
+    def read_metadata(self, num_of_features_per_n):
         score_list = []
         self.n_gram_orders_dict = {}
 
-        for n in range(1, max_n):
-            n_gram_dicts.setdefault(n, {})
+        for n in range(min_n_gram, max_n_gram+1):
+            self.n_gram_dicts.setdefault(n, {})
         res = get_db_input()
         comments = []
         for r in res:
             score_list.append(r[15])
-        for comment in comments:
-            for n in range(1, max_n):
-                if len(comment) >= n:
-                    for i in range(len(comment) - n):
-                        current_value = n_gram_dicts[n].get(' '.join(comment[i:i+n]), 0)
-                        n_gram_dicts[n][' '.join(comment[i:i+n])] = current_value + 1
+            comments.append(clean_and_tokenize(r[21]))
+            comments.append(clean_and_tokenize(r[14]))
+            comments.append(clean_and_tokenize(r[5]))
+        for c in comments:
+            for n in self.n_gram_dicts.keys():
+                if len(c) >= n:
+                    for i in range(len(c) - n):
+                        current_value = self.n_gram_dicts[n].get(' '.join(c[i:i+n]), 0)
+                        self.n_gram_dicts[n][' '.join(c[i:i+n])] = current_value + 1
                 else:
                     break
-        for n in range(1, max_n):
-            self.n_gram_orders_dict[n] = get_dict_keys_sorted_by_values(n_gram_dicts[n], num_of_features_per_n)
+        for n in self.n_gram_dicts.keys():
+            self.n_gram_orders_dict[n] = get_dict_keys_sorted_by_values(self.n_gram_dicts[n], num_of_features_per_n)
         self.border_values_for_upvotes = get_border_values(num_of_score_buckets, score_list)#gets the border of the buckets for the output features
         self.save_metadata()
 
     def save_model(self):
-        save_path = self.saver.save(self.sess, model_save_location)
+        self.saver.save(self.sess, model_save_location)
+        logger.info('model saved')
 
     def load_model(self, saver, sess):
         saver.restore(sess, model_save_location)
@@ -260,14 +270,16 @@ class DNN_comment_classifier():
             self.border_values_for_upvotes = pickle.load(f2)
 
     def get_sentiment_classification(self, text, sentiment_classifier, tokenized = False):
-        return sentiment_classifier.predict(text, tokenized = tokenized)
+        return self.sentiment_memoization.setdefault((tuple(text), tokenized),
+                                                     np.asarray(sentiment_classifier.predict(tuple(text), tokenized = tokenized)))
 
     def get_topic_classification(self, text, topic_model, num_of_topics, tokenized = False):
-        results = topic_model.get_topic(text, minimum_probability = self.topic_minimum_probability_threshold, tokenized=tokenized)
+        results = self.topic_memoization.setdefault((tuple(text), tokenized), topic_model.get_topic(tuple(text), tokenized=tokenized))
         result_vector = [0 for i in range(num_of_topics)]
-
-        for r in results:
+        results_sorted = sorted(results, key=lambda x: x[1], reverse = True)
+        for r in results_sorted[:max_topic]:
             result_vector[r[0]] = 1
+        result_vector = np.asarray(result_vector)
         return result_vector
 
 #Feature creation methods:
@@ -286,7 +298,7 @@ def create_timestamp_features(timestamp):
     return np_array
 
 def get_text_features(text, n_gram_dict, tokenized = False):
-    word_features = [0 for i in range(len(n_gram_dict.keys())*len(n_gram_dict[1]))]
+    word_features = [0 for i in range(len(n_gram_dict.keys())*len(n_gram_dict[list(n_gram_dict.keys())[0]]))]
     index = 0
     if tokenized:
         formatted_word = ' '.join(text)
@@ -297,7 +309,7 @@ def get_text_features(text, n_gram_dict, tokenized = False):
             if i in formatted_word:
                 word_features[index] = 1
             index+= 1
-    return word_features
+    return np.asarray(word_features)
 
 def get_subreddit_features(subreddit, subreddit_list):
     subreddit_features = np.zeros(len(subreddit_list)) #[0 for i in range(len(subreddit_list))]
@@ -333,6 +345,7 @@ def remove_stopwords_from_list(input_list):
     return results
 
 def get_subreddit_features(subreddit, subreddit_list):
+
     subreddit_features = np.zeros(len(subreddit_list)) #[0 for i in range(len(subreddit_list))]
     subreddit_features[subreddit_list.index(subreddit)] = 1
     return subreddit_features
@@ -360,7 +373,7 @@ def get_db_input():
         res = conn.execute('''select *
     from comments a join comments b on a.c_id = b.parent_id
     join posts c on a.p_id = c.p_id order by b.submitted_timestamp desc''').fetchall()
-        logger.info('len of input = '.format(len(res)))
+        logger.info('len of input = {0}'.format(len(res)))
         if get_newest_results or max_results_to_analyze > len(res):
             output =  res[:max_results_to_analyze]
         else:

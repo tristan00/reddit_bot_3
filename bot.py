@@ -8,11 +8,11 @@ import random
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-subreddit_names_to_follow = ['memes', 'catsstandingup', 'wholesomememes',
-                             'youdontsurf', 'nsfw', 'blackpeopletwitter',
+subreddit_names_to_follow = ['memes', 'catsstandingup', 'wholesomememes', 'wheredidthesodago',
+                             'youdontsurf', 'nsfw', 'blackpeopletwitter', 'IASIP',
                              'overwatch', 'dankmemes', 'me_irl', 'nottheonion',
                              'iamverysmart', 'pcmasterrace', 'atheism', 'comedycemetary',
-                             'totallyhuman', 'globaloffensive', 'tifu', 'actlikeyoubelong',
+                             'globaloffensive', 'tifu', 'actlikeyoubelong',
                              'dota2', 'trees', 'politics', 'science', 'jokes',
                              'gaming', 'futurology', 'wtf', 'programming',
                              'creepy', 'music', '4chan', 'madlads', 'imgoingtohellforthis',
@@ -20,6 +20,9 @@ subreddit_names_to_follow = ['memes', 'catsstandingup', 'wholesomememes',
                              'sports', 'nosleep', 'fitness', 'getmotivated', 'adviceanimals',
                              'europe', 'the_donald', 'latestagecapitalism', 'pubattlegrounds']
 user_name = None
+
+#for other class use
+reddit_agent_global = None
 
 #for now uses first login in db
 def create_praw_agent():
@@ -113,7 +116,7 @@ def read_and_store_subreddit_info_to_db(subreddit, write_to_db = True):
                 read_and_store_post_to_db(post, conn, write_to_db=write_to_db)
     return posts
 
-def get_new_posts(reddit_agent, num_of_subs = 100):
+def get_new_posts(reddit_agent, num_of_subs = 50):
     logger.info('Getting new data from selected subreddits:')
     if num_of_subs < len(subreddit_names_to_follow):
         subreddits_to_check = random.sample(subreddit_names_to_follow, num_of_subs)
@@ -128,7 +131,7 @@ def get_new_posts(reddit_agent, num_of_subs = 100):
     logger.info('New data collected')
 
 #get a number of past post ids by sampling the full list, updates the data
-def update_stored_posts(reddit_agent, num_of_posts=1000):
+def update_stored_posts(reddit_agent, num_of_posts=100):
     with sqlite3.connect('reddit.db') as conn:
         post_ids = conn.execute('select p_id from posts').fetchall()
         try:
@@ -150,18 +153,26 @@ def print_db_size():
         num_of_subreddits = conn.execute('select count(*) from subreddits').fetchall()[0]
         logger.info('DB size, subreddits: {0}, posts: {1}, comments:{2}'.format(num_of_subreddits[0], num_of_posts[0], num_of_comments[0]))
 
-def get_comments_for_most_recent_posts(num_of_posts = 250):
+def get_comments_for_most_recent_posts(num_of_posts = 200):
     with sqlite3.connect('reddit.db') as conn:
-        res = conn.execute('''select a.body, a.submitted_timestamp, b.title, b.submitted_timestamp, b.s_id
-        from comments a join posts b on a.p_id = b.p_id order by b.submitted_timestamp desc''').fetchall()
+        res = conn.execute('''select a.body, a.submitted_timestamp, b.title, b.timestamp, b.s_id, a.c_id
+        from comments a join posts b on a.p_id = b.p_id order by b.timestamp desc''').fetchall()
         results = []
         for i in res:
-            results.append({'parent_body':i[0],
+            results.append({'parent_id':i[5],
+                            'parent_body':i[0],
                             'parent_timestamp':i[1],
                             'post_title':i[2],
                             'post_timestamp':i[3],
                             's_id':i[4]})
         return results
+
+def post_reply(parent_id, text):
+    reddit_agent = create_praw_agent()
+    parent_comment = reddit_agent.comment(id=parent_id)
+    #parent_comment.reply(text)
+    logger.info('posted comment: {0} {1}'.format(parent_id, text))
+    parent_comment.reply(text)
 
 def read_data(reddit_agent):
     update_stored_posts(reddit_agent)
@@ -169,15 +180,26 @@ def read_data(reddit_agent):
     return reddit_agent
 
 def set_up():
+    global reddit_agent_global
     build_db()
     reddit_agent = create_praw_agent()
     return reddit_agent
 
-def main():
-    #wipe_db()
+def scrape_one_iteration():
     reddit_agent = set_up()
     read_data(reddit_agent)
 
+def main(iterations=100):
+    #wipe_db()
+    for i in range(iterations):
+        try:
+            scrape_one_iteration()
+        except:
+            traceback.print_exc()
+            time.sleep(10)
+
 if __name__ == '__main__':
     main()
+    #reddit_agent = set_up()
+    #post_reply(reddit_agent, 'dq21ahz', 'yes')
 

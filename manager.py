@@ -6,60 +6,72 @@ import logging
 import sqlite3
 import random
 import datetime
-import numpy as np
-from data_manager import Reddit_Memoization
+import time
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=logging.INFO)
 
 #not all comments have a hgih value responce, checks a sample fo comments per post and then moves on if it does nto see an ideal post
 top_values_returned = []
-min_comment_success_threashold = .95
+comments_to_consider_per_iteration = 10000
 max_comments_to_sample_from = 250000
-comments_to_consider_per_post = 10000
 comment_pool = []
 num_of_topics = 100
 num_of_topics_recorded = 5 #records up to top 5 probable topics
+banned_words = [' bot', 'https']
 
-def get_comment_results(comment_classifier, parent_text, parent_time_stamp, title, title_time_stamp, subreddit, child_text, child_time_stamp, sentiment_classifier, topic_model):
-    return comment_classifier.create_input_feature_from_text(title, parent_text, child_text, title_time_stamp, parent_time_stamp, child_time_stamp, subreddit, sentiment_classifier, topic_model)
 
+#faster than dealing with db io
 def load_comment_pool():
     global comment_pool
     with sqlite3.connect('reddit.db') as conn:
         res = conn.execute('select body from comments').fetchall()
         for r in res[0:max_comments_to_sample_from]:
-            comment_pool.append(r[0])
+            eligible = True
+            for b in banned_words:
+                if b in r[0].lower():
+                    eligible = False
+            if eligible:
+                comment_pool.append(r[0])
 
-def get_best_comment(post_info, comment_classifier, nb_sentiment_model, lda_topic_model):
-    sorting_struct = []
-    small_comment_pool = random.sample(comment_pool, comments_to_consider_per_post)
-    for i in small_comment_pool:
-        sorting_struct.append((i, get_comment_results(comment_classifier, i['parent_body'],
-                                                      i['parent_timestamp'], i['post_title'],
-                                                      i['post_timestamp'], i['s_id'],
-                                                      i, datetime.datetime.now().timestamp(),
-                                                      nb_sentiment_model, lda_topic_model)))
-    sorting_struct.sort(key=lambda i: i[1][-1])
+#just remapping for simplicity
+def get_comment_results(comment_classifier, sentiment_classifier, topic_model, parent_text, parent_time_stamp, title, title_time_stamp, subreddit, child_text, child_time_stamp):
+    input_features = comment_classifier.create_input_feature_from_text(title, parent_text, child_text, title_time_stamp, parent_time_stamp, child_time_stamp, subreddit, sentiment_classifier, topic_model)
+    return comment_classifier.run_input(input_features)
 
+#tries comments_to_consider_per_iteration number of possible comment parent combinations, returns most likely to get top bucket comment details
 def evaluate_comments(comment_classifier, nb_sentiment_model, lda_topic_model):
-    global top_values_returned
-    time_of_last_comment_posted = datetime.datetime.now().timestamp()
+    possible_comments_to_reply_to = bot.get_comments_for_most_recent_posts()
+    sorting_struct = []
+    start_time = time.time()
 
-    for i in bot.get_comments_for_most_recent_posts():
-        best_comment_for_reply = get_best_comment(i, comment_classifier, nb_sentiment_model, lda_topic_model)
-        top_values_returned.append(best_comment_for_reply[1][-1])
-        if datetime.datetime.now().timestamp():
-            pass
+    for count, i in enumerate(range(comments_to_consider_per_iteration)):
+        if count%1000 == 0:
+            logger.info('considered {0} comments, time: {1}'.format(count , time.time()-start_time))
+        possible_comment = random.choice(comment_pool)
+        possible_post = random.choice(possible_comments_to_reply_to)
+        result = get_comment_results(comment_classifier, nb_sentiment_model, lda_topic_model, possible_post['parent_body'],
+                            possible_post['parent_timestamp'], possible_post['post_title'], possible_post['post_timestamp'],
+                            possible_post['s_id'], possible_comment, str(datetime.datetime.now().timestamp()))
+        sorting_struct.append({'parent_id':possible_post['parent_id'], 'post_details':possible_post, 'possible_comment_text':possible_comment, 'classifier_results':result.tolist()[0]})
+
+    sorting_struct.sort(key=lambda i: i['classifier_results'][-1], reverse = True)
+    return sorting_struct[0]
 
 def main(train_comment_classifier = False):
     nb_sentiment_model = NBsentimentClassifier()
     lda_topic_model = Reddit_LDA_Model(num_of_topics)
+    load_comment_pool()
 
     if train_comment_classifier:
         comment_classifier = DNN_comment_classifier(num_of_topics, num_of_topics_recorded, retrain = True)
-        comment_classifier.train_nn(5, nb_sentiment_model, lda_topic_model)
-    bot.main()
+        comment_classifier.train_nn(10, nb_sentiment_model, lda_topic_model)
+    while True:
+        bot.scrape_one_iteration()
+        comment_to_post = evaluate_comments(comment_classifier, nb_sentiment_model, lda_topic_model)
+        print(comment_to_post)
+        bot.post_reply(comment_to_post['parent_id'], comment_to_post['possible_comment_text'])
+
 
 if __name__ == '__main__':
     main(train_comment_classifier=True)
