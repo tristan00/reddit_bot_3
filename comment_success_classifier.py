@@ -12,6 +12,7 @@ import nltk
 import numpy as np
 import tensorflow as tf
 import pickle
+import operator
 import traceback
 import os
 import re
@@ -22,16 +23,16 @@ logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=lo
 #TODO: store ngrams in db to allow model storing
 
 nodes_per_layer = 3000
-max_results_to_analyze = 1000000
+max_results_to_analyze = 10000000
 get_newest_results = True #if i cut out some results, this will only get newer results keeping my bot more updated in the meta
 stop_word_list = list(nltk.corpus.stopwords.words('english'))
 stop_word_set = set(stop_word_list)
 
 num_of_score_buckets = 10
-num_of_features_per_n = 50
+num_of_features_per_n = 100
 min_n_gram = 2
 max_n_gram = 4
-max_topic = 5
+max_topic = 3
 subreddit_list = []
 model_save_location = 'models/comment_success_classifier_model_10L_final.ckpt'
 
@@ -42,7 +43,7 @@ n_classes = 10
 
 class DNN_comment_classifier():
     def __init__(self, num_of_topics, topic_minimum_probability_threshold, retrain = False):
-        self.input_width = 47+450+300+6+144 #better to keep just undr a power of 2
+        self.input_width = 47+900+300+6+144 #better to keep just undr a power of 2
         self.sentiment_memoization = {}
         self.topic_memoization = {}
         self.n_gram_dicts = {}
@@ -60,7 +61,8 @@ class DNN_comment_classifier():
         #self.input_width = self.get_input_size()
 
     def run_input(self, i):
-        return self.sess.run(self.prediction, feed_dict = {self.x:[i]})
+        model_results = self.sess.run(self.prediction, feed_dict = {self.x:[i]}).tolist()[0]
+        return sum(map(operator.mul, model_results, self.bucket_avg))
 
     def train_nn(self, epochs, sentiment_classifier, topic_model):
         self.train_neural_network(epochs, self.optimizer, self.cost, self.x, self.y, self.sess, self.prediction, sentiment_classifier, topic_model)
@@ -245,6 +247,7 @@ class DNN_comment_classifier():
         for n in self.n_gram_dicts.keys():
             self.n_gram_orders_dict[n] = get_dict_keys_sorted_by_values(self.n_gram_dicts[n], num_of_features_per_n)
         self.border_values_for_upvotes = get_border_values(num_of_score_buckets, score_list)#gets the border of the buckets for the output features
+        self.bucket_avg = create_average_of_buckets(self.border_values_for_upvotes, score_list)
         self.save_metadata()
 
     def save_model(self):
@@ -345,7 +348,6 @@ def remove_stopwords_from_list(input_list):
     return results
 
 def get_subreddit_features(subreddit, subreddit_list):
-
     subreddit_features = np.zeros(len(subreddit_list)) #[0 for i in range(len(subreddit_list))]
     subreddit_features[subreddit_list.index(subreddit)] = 1
     return subreddit_features
@@ -365,6 +367,33 @@ def get_border_values(num_of_buckets, score_list):
     for i in range(1, num_of_buckets):
         border_values.append(np.percentile(score_list, 100*i/num_of_buckets))
     return border_values
+
+def get_score_bucket_average(num_of_buckets, score_list):
+    border_values = []
+    for i in range(1, num_of_buckets):
+        border_values.append(np.percentile(score_list, 100*i/num_of_buckets))
+    return border_values
+
+def create_average_of_buckets(border_list, score_list):
+    output_array = [[] for i in range(len(border_list) + 1)] #[0 for i in range(num_of_score_buckets)]
+    for score in score_list:
+        num_added = False
+        for i in range(len(border_list)):
+            if score < border_list[i]:
+                output_array[i].append(score)
+                num_added = True
+                break
+        if not num_added:
+            output_array[-1].append(score)
+    average_values_list = []
+    for i in output_array:
+        try:
+            average_values_list.append(sum(i)/len(i))
+        except:
+            average_values_list.append(0)
+    print([len(i) for i in output_array])
+    print([sum(i)/(len(i) +.001) for i in output_array])
+    return average_values_list
 
 #get parent, child, post data from db
 #allows user to only allow data from certai subreddits by passing list of elegible subreddit ids into it

@@ -53,9 +53,12 @@ def evaluate_comments(comment_classifier, nb_sentiment_model, lda_topic_model):
         result = get_comment_results(comment_classifier, nb_sentiment_model, lda_topic_model, possible_post['parent_body'],
                             possible_post['parent_timestamp'], possible_post['post_title'], possible_post['post_timestamp'],
                             possible_post['s_id'], possible_comment, str(datetime.datetime.now().timestamp()))
-        sorting_struct.append({'parent_id':possible_post['parent_id'], 'post_details':possible_post, 'possible_comment_text':possible_comment, 'classifier_results':result.tolist()[0]})
+        sorting_struct.append({'parent_id':possible_post['parent_id'], 'post_details':possible_post, 'possible_comment_text':possible_comment, 'classifier_results':result})
 
-    sorting_struct.sort(key=lambda i: i['classifier_results'][-1], reverse = True)
+    sorting_struct.sort(key=lambda i: i['classifier_results'], reverse = True)
+    logger.info('top picks: ')
+    for i in sorting_struct[0:5]:
+        print(i)
     return sorting_struct[0]
 
 def main(train_comment_classifier = False):
@@ -65,7 +68,7 @@ def main(train_comment_classifier = False):
 
     if train_comment_classifier:
         comment_classifier = DNN_comment_classifier(num_of_topics, num_of_topics_recorded, retrain = True)
-        comment_classifier.train_nn(10, nb_sentiment_model, lda_topic_model)
+        comment_classifier.train_nn(8, nb_sentiment_model, lda_topic_model)
     while True:
         bot.scrape_one_iteration()
         comment_to_post = evaluate_comments(comment_classifier, nb_sentiment_model, lda_topic_model)

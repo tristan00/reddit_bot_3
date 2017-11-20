@@ -116,7 +116,7 @@ def read_and_store_subreddit_info_to_db(subreddit, write_to_db = True):
                 read_and_store_post_to_db(post, conn, write_to_db=write_to_db)
     return posts
 
-def get_new_posts(reddit_agent, num_of_subs = 50):
+def get_new_posts(reddit_agent, num_of_subs = 10):
     logger.info('Getting new data from selected subreddits:')
     if num_of_subs < len(subreddit_names_to_follow):
         subreddits_to_check = random.sample(subreddit_names_to_follow, num_of_subs)
@@ -170,7 +170,6 @@ def get_comments_for_most_recent_posts(num_of_posts = 200):
 def post_reply(parent_id, text):
     reddit_agent = create_praw_agent()
     parent_comment = reddit_agent.comment(id=parent_id)
-    #parent_comment.reply(text)
     logger.info('posted comment: {0} {1}'.format(parent_id, text))
     parent_comment.reply(text)
 
