@@ -14,3 +14,14 @@ models/checkpoint
 *.iml
 *.pickle
 *.pkl
+archive/11_20_17_test_log.txt
+models/lda_model_50_topics.txt.state.sstats.npy
+models/lda_model_50_topics.txt.id2word
+models/lda_model_50_topics.txt
+models/lda_model_10_topics.txt.id2word
+models/lda_model_10_topics.txt
+models/lda_model_10_topics.txt.expElogbeta.npy
+models/lda_model_10_topics.txt.state
+models/lda_model_50_topics.txt.expElogbeta.npy
+models/lda_model_50_topics.txt.state
+models/serialized_corpus.mm

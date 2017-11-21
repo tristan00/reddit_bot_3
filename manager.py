@@ -67,13 +67,21 @@ def main(train_comment_classifier = False):
     load_comment_pool()
 
     if train_comment_classifier:
-        comment_classifier = DNN_comment_classifier(num_of_topics, num_of_topics_recorded, retrain = True)
-        comment_classifier.train_nn(8, nb_sentiment_model, lda_topic_model)
+        comment_classifier = DNN_comment_classifier(num_of_topics, num_of_topics_recorded)
+        #comment_classifier = DNN_comment_classifier(num_of_topics, num_of_topics_recorded, retrain = True)
+        #comment_classifier.train_nn(8, nb_sentiment_model, lda_topic_model)
     while True:
-        bot.scrape_one_iteration()
-        comment_to_post = evaluate_comments(comment_classifier, nb_sentiment_model, lda_topic_model)
-        print(comment_to_post)
-        bot.post_reply(comment_to_post['parent_id'], comment_to_post['possible_comment_text'])
+        #bot.scrape_one_iteration()
+        #comment_to_post = evaluate_comments(comment_classifier, nb_sentiment_model, lda_topic_model)
+        #print(comment_to_post)
+        #bot.post_reply(comment_to_post['parent_id'], comment_to_post['possible_comment_text'])
+        break
+    input_1= comment_classifier.create_input_feature_from_text("Donald Trump is shutting down his charitable foundation",
+                                                               "his money laundering company is being shut down in a panic you say? they're burning everything you say?",
+                                                               "Businesses are required to retain their tax documents by law for 6 years, even if they fold.",
+                                                               1511225948, 1511225948, 1511225948, 't5_2cneq', nb_sentiment_model, lda_topic_model)
+    print(input_1)
+    print(comment_classifier.run_input(input_1))
 
 
 if __name__ == '__main__':

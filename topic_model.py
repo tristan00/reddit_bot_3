@@ -6,16 +6,17 @@ import traceback
 import logging
 
 stop_word_set = set(nltk.corpus.stopwords.words('english'))
-lda_model_location = '/models/lda_model.txt'
-corpus_location = '/models/serialized_corpus.mm'
+lda_model_location = 'models/lda_model_{0}_topics.txt'
+corpus_location = 'models/serialized_corpus.mm'
 dictionary_location = "models/tag_dictionary_lda.pkl"
+logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=logging.INFO)
 
 class Reddit_LDA_Model():
     def __init__(self, num_of_topics):
-        self.build_lda(num_of_topics)
+        self.num_of_topics = num_of_topics
+        self.build_lda()
         result = self.get_topic("Trump and his allies may have colluded with Russia for different reasons, nevertheless a pattern seems to be emerging in which a conspiracy to commit offense or to defraud the United States becomes more likely on every passing day as more information comes to light.")
         print(result)
-
 
     #TODO: make generator out of underlying db input function
     def get_texts(self):
@@ -31,17 +32,17 @@ class Reddit_LDA_Model():
         return corpus
 
     #try and load, if not it builds
-    def build_lda(self, num_of_topics):
+    def build_lda(self):
         try:
             self.corpus = gensim.corpora.MmCorpus(corpus_location)
             self.dictionary = gensim.corpora.Dictionary.load(dictionary_location)
-            self.lda = gensim.models.ldamodel.LdaModel.load(lda_model_location)
+            self.lda = gensim.models.ldamodel.LdaModel.load(lda_model_location.format(self.num_of_topics))
         except:
             traceback.print_exc()
             logging.info('training topic model:')
             self.corpus = self.get_corpus()
-            self.lda = gensim.models.ldamodel.LdaModel(self.corpus, num_topics=num_of_topics)
-            self.lda.save(lda_model_location)
+            self.lda = gensim.models.ldamodel.LdaModel(self.corpus, num_topics=self.num_of_topics)
+            self.lda.save(lda_model_location.format(self.num_of_topics))
 
     def get_topic(self, text, minimum_probability = .01, tokenized=False):
         if tokenized:
@@ -73,7 +74,17 @@ def get_db_input():
         return [i[0] for i in res]
 
 if __name__ == '__main__':
-    corpus_class = Reddit_LDA_Model()
+    print('n:', 10)
+    corpus_class = Reddit_LDA_Model(10)
+    print(corpus_class.lda.print_topics())
+
+    print('n:', 100)
+    corpus_class = Reddit_LDA_Model(50)
+    corpus_class.lda.show_topics()
+
+    print('n:', 500)
+    corpus_class = Reddit_LDA_Model(500)
+    corpus_class.lda.show_topics()
 
 
 

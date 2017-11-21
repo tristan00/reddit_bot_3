@@ -7,8 +7,9 @@ import random
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-subreddit_names_to_follow = ['memes', 'catsstandingup', 'wholesomememes', 'wheredidthesodago',
+subreddit_names_to_follow = ['prequelmemes', 'sequelmemes', 'wallstreetbets', 'mma',
+                             'nba', 'totallynotrobots', 'surrealmemes','memes',
+                             'catsstandingup', 'wholesomememes', 'wheredidthesodago',
                              'youdontsurf', 'nsfw', 'blackpeopletwitter', 'IASIP',
                              'overwatch', 'dankmemes', 'me_irl', 'nottheonion',
                              'iamverysmart', 'pcmasterrace', 'atheism', 'comedycemetary',
@@ -153,12 +154,12 @@ def print_db_size():
         num_of_subreddits = conn.execute('select count(*) from subreddits').fetchall()[0]
         logger.info('DB size, subreddits: {0}, posts: {1}, comments:{2}'.format(num_of_subreddits[0], num_of_posts[0], num_of_comments[0]))
 
-def get_comments_for_most_recent_posts(num_of_posts = 200):
+def get_comments_for_most_recent_posts(num_of_posts = 100):
     with sqlite3.connect('reddit.db') as conn:
         res = conn.execute('''select a.body, a.submitted_timestamp, b.title, b.timestamp, b.s_id, a.c_id
         from comments a join posts b on a.p_id = b.p_id order by b.timestamp desc''').fetchall()
         results = []
-        for i in res:
+        for i in res[0:num_of_posts]:
             results.append({'parent_id':i[5],
                             'parent_body':i[0],
                             'parent_timestamp':i[1],

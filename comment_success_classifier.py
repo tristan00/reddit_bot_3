@@ -55,13 +55,11 @@ class DNN_comment_classifier():
 
         if retrain:
             self.read_metadata(num_of_features_per_n)
-        else:
-            self.load_metadata()
-            self.load_model(self.saver, self.sess)
-        #self.input_width = self.get_input_size()
+
 
     def run_input(self, i):
         model_results = self.sess.run(self.prediction, feed_dict = {self.x:[i]}).tolist()[0]
+        print(model_results)
         return sum(map(operator.mul, model_results, self.bucket_avg))
 
     def train_nn(self, epochs, sentiment_classifier, topic_model):
@@ -256,6 +254,7 @@ class DNN_comment_classifier():
 
     def load_model(self, saver, sess):
         saver.restore(sess, model_save_location)
+        self.load_metadata()
 
     def save_metadata(self):
         with open('models/comment_classifier_ngrams.pickle', 'wb') as f1:
