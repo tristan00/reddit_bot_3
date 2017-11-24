@@ -25,17 +25,17 @@ banned_words = [' bot', 'https']
 def load_comment_pool():
     global comment_pool
     with sqlite3.connect('reddit.db') as conn:
-        res = conn.execute('select body from comments').fetchall()
+        res = conn.execute('select a.body, b.input from comments a join preprocessed_comments b on a.c_id = b.c_id').fetchall()
         for r in res[0:max_comments_to_sample_from]:
             eligible = True
             for b in banned_words:
                 if b in r[0].lower():
                     eligible = False
             if eligible:
-                comment_pool.append(r[0])
+                comment_pool.append(r)
 
 #just remapping for simplicity
-def get_comment_results(comment_classifier, sentiment_classifier, topic_model, parent_text, parent_time_stamp, title, title_time_stamp, subreddit, child_text, child_time_stamp):
+def get_comment_results(comment_classifier, child_input, parent_input, post_input, subreddit_input):
     input_features = comment_classifier.create_input_feature_from_text(title, parent_text, child_text, title_time_stamp, parent_time_stamp, child_time_stamp, subreddit, sentiment_classifier, topic_model)
     return comment_classifier.run_input(input_features)
 

@@ -25,3 +25,12 @@ models/lda_model_10_topics.txt.state
 models/lda_model_50_topics.txt.expElogbeta.npy
 models/lda_model_50_topics.txt.state
 models/serialized_corpus.mm
+*.txt
+*.npy
+*.id2word
+*.state
+*.mm
+*.txt
+*.npy
+*.txt
+*.npy

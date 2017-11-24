@@ -4,11 +4,12 @@ import string
 import sqlite3
 import traceback
 import logging
+import random
 
 stop_word_set = set(nltk.corpus.stopwords.words('english'))
 lda_model_location = 'models/lda_model_{0}_topics.txt'
-corpus_location = 'models/serialized_corpus.mm'
-dictionary_location = "models/tag_dictionary_lda.pkl"
+corpus_location = 'models/serialized_corpus_{0}.mm'
+dictionary_location = "models/tag_dictionary_lda_{0}.pkl"
 logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=logging.INFO)
 
 class Reddit_LDA_Model():
@@ -26,16 +27,16 @@ class Reddit_LDA_Model():
 
     def get_corpus(self):
         self.dictionary = gensim.corpora.Dictionary(self.get_texts())
-        self.dictionary.save(dictionary_location)
+        self.dictionary.save(dictionary_location.format(self.num_of_topics))
         corpus = [self.dictionary.doc2bow(text) for text in self.get_texts()]
-        gensim.corpora.MmCorpus.serialize(corpus_location, corpus)
+        gensim.corpora.MmCorpus.serialize(corpus_location.format(self.num_of_topics), corpus)
         return corpus
 
     #try and load, if not it builds
     def build_lda(self):
         try:
-            self.corpus = gensim.corpora.MmCorpus(corpus_location)
-            self.dictionary = gensim.corpora.Dictionary.load(dictionary_location)
+            self.corpus = gensim.corpora.MmCorpus(corpus_location.format(self.num_of_topics))
+            self.dictionary = gensim.corpora.Dictionary.load(dictionary_location.format(self.num_of_topics))
             self.lda = gensim.models.ldamodel.LdaModel.load(lda_model_location.format(self.num_of_topics))
         except:
             traceback.print_exc()
@@ -71,19 +72,25 @@ def get_db_input():
     with sqlite3.connect('reddit.db') as conn:
         res = conn.execute('''select body
     from comments''').fetchall()
-        return [i[0] for i in res]
+        output = [i[0] for i in res]
+        random.shuffle(output)
+        return output
 
 if __name__ == '__main__':
     print('n:', 10)
     corpus_class = Reddit_LDA_Model(10)
     print(corpus_class.lda.print_topics())
 
-    print('n:', 100)
+    print('n:', 50)
     corpus_class = Reddit_LDA_Model(50)
     corpus_class.lda.show_topics()
 
-    print('n:', 500)
-    corpus_class = Reddit_LDA_Model(500)
+    print('n:', 100)
+    corpus_class = Reddit_LDA_Model(100)
+    corpus_class.lda.show_topics()
+
+    print('n:', 200)
+    corpus_class = Reddit_LDA_Model(200)
     corpus_class.lda.show_topics()
 
 

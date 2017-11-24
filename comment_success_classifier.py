@@ -16,6 +16,7 @@ import operator
 import traceback
 import os
 import re
+from topic_model import Reddit_LDA_Model
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=logging.INFO)
@@ -24,9 +25,11 @@ logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=lo
 
 nodes_per_layer = 3000
 max_results_to_analyze = 10000000
-get_newest_results = True #if i cut out some results, this will only get newer results keeping my bot more updated in the meta
 stop_word_list = list(nltk.corpus.stopwords.words('english'))
 stop_word_set = set(stop_word_list)
+max_word_length_for_features = 10
+max_word_count_for_features = 10
+word_count_bucket_size = 4
 
 num_of_score_buckets = 10
 num_of_features_per_n = 100
@@ -36,34 +39,27 @@ max_topic = 3
 subreddit_list = []
 model_save_location = 'models/comment_success_classifier_model_10L_final.ckpt'
 
-
-
-
 n_classes = 10
 
 class DNN_comment_classifier():
-    def __init__(self, num_of_topics, topic_minimum_probability_threshold, retrain = False):
-        self.input_width = 47+900+300+6+144 #better to keep just undr a power of 2
+    def __init__(self, topics, retrain = False):
+        self.topics = topics
+        self.input_width = 1297+66
         self.sentiment_memoization = {}
         self.topic_memoization = {}
-        self.n_gram_dicts = {}
-        self.num_of_topics = num_of_topics
-        self.topic_minimum_probability_threshold = topic_minimum_probability_threshold
         self.retrain = retrain
         self.sub_list = get_subreddit_list()
         self.optimizer, self.cost, self.x, self.y, self.sess, self.prediction, self.saver, self.prob = self.build_neural_network()
-
-        if retrain:
-            self.read_metadata(num_of_features_per_n)
+        self.read_metadata()
 
 
     def run_input(self, i):
-        model_results = self.sess.run(self.prediction, feed_dict = {self.x:[i]}).tolist()[0]
+        model_results = self.sess.run(self.prediction, feed_dict = {self.x:[i], self.prob: 1}).tolist()[0]
         print(model_results)
         return sum(map(operator.mul, model_results, self.bucket_avg))
 
-    def train_nn(self, epochs, sentiment_classifier, topic_model):
-        self.train_neural_network(epochs, self.optimizer, self.cost, self.x, self.y, self.sess, self.prediction, sentiment_classifier, topic_model)
+    def train_nn(self, epochs):
+        self.train_neural_network(epochs, self.optimizer, self.cost, self.x, self.y, self.sess, self.prediction)
 
     def build_neural_network(self):
         x = tf.placeholder('float', [None, self.input_width])
@@ -103,7 +99,6 @@ class DNN_comment_classifier():
         output_layer = {'weights': tf.Variable(tf.random_normal([nodes_per_layer, n_classes])),
                             'biases': tf.Variable(tf.random_normal([n_classes]))}
 
-        keep_prob = .5
         prob = tf.placeholder_with_default(1.0, shape=())
         l1 = tf.add(tf.matmul(x, hidden_1_layer['weights']), hidden_1_layer['biases'])
         l1 = tf.nn.relu(l1)
@@ -137,45 +132,75 @@ class DNN_comment_classifier():
         output = tf.matmul(l10_dropout, output_layer['weights']) +  output_layer['biases']
         return output, prob
 
-    def train_neural_network(self, epochs, optimizer, cost, x, y, sess, prediction, sentiment_classifier, topic_model):
+    def train_neural_network(self, epochs, optimizer, cost, x, y, sess, prediction, preprocessed = True):
         start_time = time.time()
         batch_size = 100
         hm_epochs = epochs
         inputs = get_db_input()
+        train_x, train_y, test_x, test_y = self.create_feature_sets_and_labels(inputs, preprocessed = preprocessed)
+
         logger.info('got inputs')
-        random.shuffle(inputs)
-        train_x, train_y, test_x, test_y = self.create_feature_sets_and_labels(inputs,  sentiment_classifier, topic_model)
         del inputs[:]
         logger.info('input len: {0}'.format(len(train_x)))
-
         logger.info('starting training')
+
         for epoch in range(hm_epochs):
             epoch_loss = 0
             i=0
             while i < len(train_x):
-                start = i
-                end = i + batch_size
-                batch_x = np.array(train_x[start:end])
-                batch_y = np.array(train_y[start:end])
-                _, c = sess.run([optimizer, cost], feed_dict= {x:batch_x, y:batch_y, self.prob: 0.5})
-                epoch_loss += c
-                i += batch_size
-                logger.info("Batch {0} of epoch {1} completed, loss: {2}, time:{3}".format(i/batch_size, epoch, c, time.time() - start_time))
+                try:
+                    start = i
+                    end = i + batch_size
+                    batch_x = np.array(train_x[start:end])
+                    batch_y = np.array(train_y[start:end])
+                    _, c = sess.run([optimizer, cost], feed_dict= {x:batch_x, y:batch_y, self.prob: 0.5})
+                    epoch_loss += c
+                    i += batch_size
+                    logger.info("Batch {0} of epoch {1} completed, loss: {2}, time:{3}".format(i/batch_size, epoch, c, time.time() - start_time))
+                except:
+                    traceback.print_exc()
+                    list_batch = batch_x.tolist()
+                    print(list_batch)
+
+
             logger.info("Epoch {0} completed out of {1}, loss: {2}".format(epoch, hm_epochs,epoch_loss))
         correct = tf.equal(tf.argmax(prediction, 1), tf.argmax(y, 1))
         accuracy = tf.reduce_mean(tf.cast(correct, 'float'))
         accuracy_float = accuracy.eval(session = sess, feed_dict = {x:test_x, y:test_y, self.prob: 1.0})
         logger.info(('Accuracy:', accuracy_float))
+
+
+        for i in test_x[:10]:
+            print(self.run_input(i))
         self.save_model()
         return sess, prediction, x, y
 
-    def create_feature_sets_and_labels(self, inputs,  sentiment_classifier, topic_model, test_size = .01):
+    def validate(self, input_feature, output_features):
+        if input_feature.size == self.input_width:
+            return True
+        else:
+            return None
+
+    def create_feature_sets_and_labels(self, inputs, test_size = .01, preprocessed = False):
         random.shuffle(inputs)
         feature_list = []
-        for count, i in enumerate(inputs):
-            if count%1000 == 0:
-                logger.info('comment classifier proccessed {0} comments, timestamp:{1}'.format(count, time.time()))
-            feature_list.append([self.create_input_features(i, sentiment_classifier, topic_model), self.create_output_features(i)])
+        if not preprocessed:
+            for count, i in enumerate(inputs):
+                if count%1000 == 0:
+                    logger.info('comment classifier proccessed {0} comments, timestamp:{1}'.format(count, time.time()))
+                feature_list.append([create_input_features(i, self.topics), self.create_output_features(i)])
+        else:
+            invalid_inputs = 0
+            for count, i in enumerate(inputs):
+                if count%1000 == 0:
+                    logger.info('comment classifier proccessed {0} comments, invalid inputs:{1}, timestamp:{2}'.format(count,invalid_inputs, time.time()))
+                possible_input = np.concatenate((eval(i[0]), eval(i[1]), eval(i[2]), get_subreddit_features(i[3])))
+                possible_output = self.create_output_features(i)
+                if self.validate(possible_input, possible_output):
+                    feature_list.append([possible_input, possible_output])
+                else:
+                    invalid_inputs += 1
+            print('invalid inputs:', invalid_inputs)
         testing_size = int(test_size*len(inputs))
         train_x = [i[0] for i in feature_list[testing_size:]]
         train_y = [i[1] for i in feature_list[testing_size:]]
@@ -186,64 +211,20 @@ class DNN_comment_classifier():
     def create_output_features(self, output):
         output_array = np.zeros(num_of_score_buckets) #[0 for i in range(num_of_score_buckets)]
         for i in range(len(self.border_values_for_upvotes)):
-            if output[6] < self.border_values_for_upvotes[i]:
+            if output[4] < self.border_values_for_upvotes[i]:
                 output_array[i] = 1
                 return output_array
         output_array[len(self.border_values_for_upvotes)] = 1
         return output_array
 
-    def create_input_feature_from_text(self, title, parent_text, child_text, title_time_stamp, parent_time_stamp, child_time_stamp, subreddit, sentiment_classifier, topic_model):
-        tokenized_title = clean_and_tokenize(title)
-        tokenized_parent = clean_and_tokenize(parent_text)
-        tokenized_child = clean_and_tokenize(child_text)
-
-        parent_sentiment = self.get_sentiment_classification(tokenized_parent, sentiment_classifier, tokenized=True)
-        child_sentiment = self.get_sentiment_classification(tokenized_child, sentiment_classifier, tokenized=True)
-        post_sentiment = self.get_sentiment_classification(tokenized_title, sentiment_classifier, tokenized=True)
-        parent_topic = self.get_topic_classification(tokenized_parent, topic_model, self.num_of_topics, tokenized=True)
-        child_topic = self.get_topic_classification(tokenized_child, topic_model, self.num_of_topics, tokenized=True)
-        post_topic = self.get_topic_classification(tokenized_title, topic_model, self.num_of_topics, tokenized=True)
-        parent_timestamp_features = create_timestamp_features(parent_time_stamp)
-        child_timestamp_features = create_timestamp_features(child_time_stamp)
-        post_timestamp_features = create_timestamp_features(title_time_stamp)
-        subreddit_features = get_subreddit_features(subreddit, self.sub_list)
-        parent_features = get_text_features(parent_text, self.n_gram_orders_dict, tokenized=True)
-        child_features = get_text_features(child_text, self.n_gram_orders_dict, tokenized=True)
-        title_features = get_text_features(title, self.n_gram_orders_dict, tokenized=True)
-        input_features = np.concatenate((parent_sentiment, child_sentiment, post_sentiment, parent_topic, child_topic, post_topic,
-                                         parent_timestamp_features, child_timestamp_features, post_timestamp_features,
-                                        subreddit_features, parent_features, child_features,title_features))
-        return input_features
-
-    def create_input_features(self, i, sentiment_classifier, topic_model):
-        return self.create_input_feature_from_text( i[21], i[14], i[5], i[24], i[7], i[16], i[2], sentiment_classifier, topic_model)
-
     #build ngrams and rank comments
     #for each comment, remove stopwords then place into n-grams
     #sort the ngrams by how common they are, store the most common ones
-    def read_metadata(self, num_of_features_per_n):
+    def read_metadata(self, get_preprocessed = True):
+        inputs = get_db_input()
         score_list = []
-        self.n_gram_orders_dict = {}
-
-        for n in range(min_n_gram, max_n_gram+1):
-            self.n_gram_dicts.setdefault(n, {})
-        res = get_db_input()
-        comments = []
-        for r in res:
-            score_list.append(r[15])
-            comments.append(clean_and_tokenize(r[21]))
-            comments.append(clean_and_tokenize(r[14]))
-            comments.append(clean_and_tokenize(r[5]))
-        for c in comments:
-            for n in self.n_gram_dicts.keys():
-                if len(c) >= n:
-                    for i in range(len(c) - n):
-                        current_value = self.n_gram_dicts[n].get(' '.join(c[i:i+n]), 0)
-                        self.n_gram_dicts[n][' '.join(c[i:i+n])] = current_value + 1
-                else:
-                    break
-        for n in self.n_gram_dicts.keys():
-            self.n_gram_orders_dict[n] = get_dict_keys_sorted_by_values(self.n_gram_dicts[n], num_of_features_per_n)
+        for i in inputs:
+            score_list.append(i[4])
         self.border_values_for_upvotes = get_border_values(num_of_score_buckets, score_list)#gets the border of the buckets for the output features
         self.bucket_avg = create_average_of_buckets(self.border_values_for_upvotes, score_list)
         self.save_metadata()
@@ -257,35 +238,60 @@ class DNN_comment_classifier():
         self.load_metadata()
 
     def save_metadata(self):
-        with open('models/comment_classifier_ngrams.pickle', 'wb') as f1:
-            pickle.dump(self.n_gram_orders_dict, f1, protocol=pickle.HIGHEST_PROTOCOL)
-
         with open('models/comment_classifier_upvote_border_values.pickle', 'wb') as f2:
             pickle.dump(self.border_values_for_upvotes, f2, protocol=pickle.HIGHEST_PROTOCOL)
+        with open('models/comment_classifier_upvote_bucket.pickle', 'wb') as f2:
+            pickle.dump(self.bucket_avg, f2, protocol=pickle.HIGHEST_PROTOCOL)
         logger.info('metadata saved')
 
     def load_metadata(self):
-        with open('models/comment_classifier_ngrams.pickle', 'rb') as f1:
-            self.n_gram_orders_dict = pickle.load(f1)
-
         with open('models/comment_classifier_upvote_border_values.pickle', 'rb') as f2:
             self.border_values_for_upvotes = pickle.load(f2)
-
-    def get_sentiment_classification(self, text, sentiment_classifier, tokenized = False):
-        return self.sentiment_memoization.setdefault((tuple(text), tokenized),
-                                                     np.asarray(sentiment_classifier.predict(tuple(text), tokenized = tokenized)))
-
-    def get_topic_classification(self, text, topic_model, num_of_topics, tokenized = False):
-        results = self.topic_memoization.setdefault((tuple(text), tokenized), topic_model.get_topic(tuple(text), tokenized=tokenized))
-        result_vector = [0 for i in range(num_of_topics)]
-        results_sorted = sorted(results, key=lambda x: x[1], reverse = True)
-        for r in results_sorted[:max_topic]:
-            result_vector[r[0]] = 1
-        result_vector = np.asarray(result_vector)
-        return result_vector
+        with open('models/comment_classifier_upvote_bucket.pickle', 'rb') as f2:
+            self.bucket_avg = pickle.load(f2)
 
 #Feature creation methods:
 #features of hour will be most useful followed by weekday and month, week of month is there for now
+def create_input_feature_from_text(title, parent_text, child_text, title_time_stamp, parent_time_stamp, child_time_stamp, subreddit, subreddit_list, topic_models):
+    child_features = preprocess_item(child_text, child_time_stamp, topic_models)
+    parent_item = preprocess_item(parent_text, parent_time_stamp, topic_models)
+    title_item = preprocess_item(title, title_time_stamp, topic_models)
+    subreddit_features = get_subreddit_features(subreddit)
+    return child_features + parent_item + title_item + subreddit_features
+
+def preprocess_item(text, timestamp, topic_models):
+    tokenized_comment = clean_and_tokenize(text)
+    topic_features = []
+    for i in topic_models:
+        topic_features += get_topic_classification(tokenized_comment, i, tokenized=True)
+    word_count_feature = get_word_count_feature(tokenized_comment)
+    word_length_feature = get_word_length_feature(tokenized_comment)
+    timestamp_features = create_timestamp_features(timestamp)
+    return topic_features + timestamp_features + word_count_feature + word_length_feature
+
+def validate(input_len, input_features, out_put_features):
+    if len(input_features) == input_len:
+        return True
+    else:
+        return False
+
+def get_topic_classification(text, topic_model, tokenized = False):
+    #results = topic_memoization.setdefault((tuple(text), tokenized), topic_model.get_topic(tuple(text), tokenized=tokenized))
+    results =  topic_model.get_topic(tuple(text), tokenized=tokenized)
+    result_vector = [0 for i in range(topic_model.num_of_topics + 1)]
+    results_sorted = sorted(results, key=lambda x: x[1], reverse = True)
+    if len(results) == 0:
+        result_vector[-1] = 1
+    else:
+        result_vector[results_sorted[0][0]] = 1
+    return result_vector
+
+def create_input_features(i, topic_models):
+    return create_input_feature_from_text( i[21], i[14], i[5], i[24], i[7], i[16], i[2], topic_models)
+
+def store_preprocessed_comment(comment_id, comment_features):
+    pass
+
 def create_timestamp_features(timestamp):
     datetime_timestamp = datetime.datetime.utcfromtimestamp(float(timestamp))
     hour_feature = [0 for i in range(24)]
@@ -296,8 +302,7 @@ def create_timestamp_features(timestamp):
     week_day_feature[datetime_timestamp.weekday()] = 1
     week_month_feature[datetime_timestamp.day//7] = 1
     month_feature[datetime_timestamp.month-1] = 1 #month starts at 1
-    np_array =  np.asarray(hour_feature + week_day_feature + week_month_feature + month_feature)
-    return np_array
+    return hour_feature + week_day_feature + week_month_feature + month_feature
 
 def get_text_features(text, n_gram_dict, tokenized = False):
     word_features = [0 for i in range(len(n_gram_dict.keys())*len(n_gram_dict[list(n_gram_dict.keys())[0]]))]
@@ -312,11 +317,6 @@ def get_text_features(text, n_gram_dict, tokenized = False):
                 word_features[index] = 1
             index+= 1
     return np.asarray(word_features)
-
-def get_subreddit_features(subreddit, subreddit_list):
-    subreddit_features = np.zeros(len(subreddit_list)) #[0 for i in range(len(subreddit_list))]
-    subreddit_features[subreddit_list.index(subreddit)] = 1
-    return subreddit_features
 
 #Helper methods:
 def format_text(input_text):
@@ -346,9 +346,10 @@ def remove_stopwords_from_list(input_list):
             results.append(i)
     return results
 
-def get_subreddit_features(subreddit, subreddit_list):
-    subreddit_features = np.zeros(len(subreddit_list)) #[0 for i in range(len(subreddit_list))]
-    subreddit_features[subreddit_list.index(subreddit)] = 1
+def get_subreddit_features(s_id):
+    subreddit_list = get_subreddit_list()
+    subreddit_features =  [0 for i in range(len(subreddit_list))]
+    subreddit_features[subreddit_list.index(s_id)] = 1
     return subreddit_features
 
 #Helper methods:
@@ -394,32 +395,118 @@ def create_average_of_buckets(border_list, score_list):
     print([sum(i)/(len(i) +.001) for i in output_array])
     return average_values_list
 
+def get_word_length_feature(word_tokens):
+    if len(word_tokens) == 0:
+        return [0 for _ in range(max_word_length_for_features+1)]
+
+    average_length = int(sum([len(i) for i in word_tokens])/len(word_tokens))
+    features = [0 for _ in range(max_word_length_for_features+1)]
+    if average_length < max_word_length_for_features:
+        features[average_length] = 1
+    else:
+        features[-1] = 1
+    return features
+
+def get_word_count_feature(word_tokens):
+    features = [0 for _ in range(max_word_count_for_features+1)]
+
+    if len(word_tokens)//word_count_bucket_size < max_word_count_for_features:
+        features[len(word_tokens)//word_count_bucket_size] = 1
+    else:
+        features[-1] = 1
+    return features
+
 #get parent, child, post data from db
 #allows user to only allow data from certai subreddits by passing list of elegible subreddit ids into it
 def get_db_input():
     with sqlite3.connect('reddit.db') as conn:
-        res = conn.execute('''select *
-    from comments a join comments b on a.c_id = b.parent_id
-    join posts c on a.p_id = c.p_id order by b.submitted_timestamp desc''').fetchall()
-        logger.info('len of input = {0}'.format(len(res)))
-        if get_newest_results or max_results_to_analyze > len(res):
-            output =  res[:max_results_to_analyze]
-        else:
-            random.shuffle(res)
-            output =  res[:max_results_to_analyze]
-        return output
+        res = conn.execute('''select b.input, d.input, f.input, a.s_id, a.score
+    from comments a join preprocessed_comments b on a.c_id = b.c_id
+    join comments c on a.parent_id = c.c_id
+    join preprocessed_comments d on c.c_id = d.c_id
+    join posts e on a.p_id = e.p_id
+    join preprocessed_posts f on e.p_id = f.p_id
+    order by a.submitted_timestamp desc''').fetchall()
+    logger.info('len of input = {0}'.format(len(res)))
+
+    random.shuffle(res)
+    output =  res[:max_results_to_analyze]
+    return output
+
+def preprocess_all_comments(topic_models):
+    with sqlite3.connect('reddit.db') as conn:
+        res = conn.execute('''select c_id, body, submitted_timestamp
+        from comments ''').fetchall()
+        for count, i in enumerate(res):
+            if count %10000 == 0:
+                conn.commit()
+                logger.info('{0} comments preprocessed'.format(count))
+            try:
+                conn.execute('insert into preprocessed_comments values (?, ?)', (i[0], repr(preprocess_item(i[1], i[2], topic_models))))
+            except sqlite3.IntegrityError:
+                conn.execute('update preprocessed_comments set input = ? where c_id = ?', (repr(preprocess_item(i[1], i[2], topic_models)), i[0]))
+        conn.commit()
+
+def preprocess_unprocessed_comments(topic_models):
+    with sqlite3.connect('reddit.db') as conn:
+        res = conn.execute('''select c_id, body, submitted_timestamp
+        from comments where c_id not in (select c_id from preprocessed_comments)''').fetchall()
+        for count, i in enumerate(res):
+            if count %10000 == 0:
+                conn.commit()
+                logger.info('{0} comments preprocessed'.format(count))
+            try:
+                conn.execute('insert into preprocessed_comments values (?, ?)', (i[0], repr(preprocess_item(i[1], i[2], topic_models))))
+            except sqlite3.IntegrityError:
+                conn.execute('update preprocessed_comments set input = ? where c_id = ?', (repr(preprocess_item(i[1], i[2], topic_models)), i[0]))
+        conn.commit()
+
+def preprocess_all_posts(topic_models):
+    with sqlite3.connect('reddit.db') as conn:
+        res = conn.execute('''select p_id, title, timestamp
+        from posts ''').fetchall()
+        for count, i in enumerate(res):
+            if count %10000== 0:
+                conn.commit()
+                logger.info('{0} posts preprocessed'.format(count))
+            try:
+                conn.execute('insert into preprocessed_posts values (?, ?)', (i[0], repr(preprocess_item(i[1], i[2], topic_models))))
+            except sqlite3.IntegrityError:
+                conn.execute('update preprocessed_posts set input = ? where c_id = ?', (repr(preprocess_item(i[1], i[2], topic_models)), i[0]))
+        conn.commit()
+
+def preprocess_unprocessed_posts(topic_models):
+    with sqlite3.connect('reddit.db') as conn:
+        res = conn.execute('''select p_id, title, timestamp
+        from posts where p_id not in (select p_id from preprocessed_posts)''').fetchall()
+        for count, i in enumerate(res):
+            if count %10000== 0:
+                conn.commit()
+                logger.info('{0} posts preprocessed'.format(count))
+            try:
+                conn.execute('insert into preprocessed_posts values (?, ?)', (i[0], repr(preprocess_item(i[1], i[2], topic_models))))
+            except sqlite3.IntegrityError:
+                conn.execute('update preprocessed_posts set input = ? where c_id = ?', (repr(preprocess_item(i[1], i[2], topic_models)), i[0]))
+        conn.commit()
 
 def get_subreddit_list():
     global subreddit_list
     if len(subreddit_list) == 0:
         with sqlite3.connect('reddit.db') as conn:
-            res = conn.execute('select distinct s_id from subreddits order by full_name').fetchall()
+            res = conn.execute('select distinct s_id from subreddits order by s_id').fetchall()
             subreddit_list = [i[0] for i in res]
     return subreddit_list
 
 #testing
 if __name__ == '__main__':
-    dnn = DNN_comment_classifier()
+    topics = []
+    for i in [10, 50, 100, 200]:
+        topics.append(Reddit_LDA_Model(i))
+
+    preprocess_unprocessed_comments(topics)
+    preprocess_unprocessed_posts(topics)
+    dnn = DNN_comment_classifier(topics, retrain=True)
+    dnn.train_nn(5)
     print('here')
 
 
