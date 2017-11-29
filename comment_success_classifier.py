@@ -24,12 +24,13 @@ logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=lo
 #TODO: store ngrams in db to allow model storing
 
 nodes_per_layer = 3000
-max_results_to_analyze = 10000000
+max_results_to_analyze = 1000
 stop_word_list = list(nltk.corpus.stopwords.words('english'))
 stop_word_set = set(stop_word_list)
 max_word_length_for_features = 10
 max_word_count_for_features = 10
 word_count_bucket_size = 4
+sub_feature_dict = {}
 
 num_of_score_buckets = 10
 num_of_features_per_n = 100
@@ -39,7 +40,7 @@ max_topic = 3
 subreddit_list = []
 model_save_location = 'models/comment_success_classifier_model_10L_final.ckpt'
 
-n_classes = 10
+n_classes = num_of_score_buckets
 
 class DNN_comment_classifier():
     def __init__(self, topics, retrain = False):
@@ -54,9 +55,11 @@ class DNN_comment_classifier():
 
 
     def run_input(self, i):
-        model_results = self.sess.run(self.prediction, feed_dict = {self.x:[i], self.prob: 1}).tolist()[0]
+        model_results = self.sess.run(self.prediction, feed_dict = {self.x:[i], self.prob: 1})[0]
         print(model_results)
-        return sum(map(operator.mul, model_results, self.bucket_avg))
+        adjusted_results = softmax(model_results)
+        print(adjusted_results)
+        return sum(map(operator.mul, adjusted_results, self.bucket_avg))
 
     def train_nn(self, epochs):
         self.train_neural_network(epochs, self.optimizer, self.cost, self.x, self.y, self.sess, self.prediction)
@@ -96,40 +99,33 @@ class DNN_comment_classifier():
                           'biases': tf.Variable(tf.random_normal([nodes_per_layer]))}
         hidden_10_layer = {'weights': tf.Variable(tf.random_normal([nodes_per_layer, nodes_per_layer])),
                           'biases': tf.Variable(tf.random_normal([nodes_per_layer]))}
+
         output_layer = {'weights': tf.Variable(tf.random_normal([nodes_per_layer, n_classes])),
                             'biases': tf.Variable(tf.random_normal([n_classes]))}
 
         prob = tf.placeholder_with_default(1.0, shape=())
         l1 = tf.add(tf.matmul(x, hidden_1_layer['weights']), hidden_1_layer['biases'])
-        l1 = tf.nn.relu(l1)
+        l1 = tf.nn.leaky_relu(l1, alpha=.5)
         l2 = tf.add(tf.matmul(l1, hidden_2_layer['weights']), hidden_2_layer['biases'])
-        l2 = tf.nn.relu(l2)
-        l2_dropout = tf.nn.dropout(l2, prob)
-        l3 = tf.add(tf.matmul(l2_dropout, hidden_3_layer['weights']), hidden_3_layer['biases'])
-        l3 = tf.nn.relu(l3)
-        l3_dropout = tf.nn.dropout(l3, prob)
-        l4 = tf.add(tf.matmul(l3_dropout, hidden_4_layer['weights']), hidden_4_layer['biases'])
-        l4 = tf.nn.relu(l4)
-        l4_dropout = tf.nn.dropout(l4, prob)
-        l5 = tf.add(tf.matmul(l4_dropout, hidden_5_layer['weights']), hidden_5_layer['biases'])
-        l5 = tf.nn.relu(l5)
-        l5_dropout = tf.nn.dropout(l5, prob)
-        l6 = tf.add(tf.matmul(l5_dropout, hidden_6_layer['weights']), hidden_6_layer['biases'])
-        l6 = tf.nn.relu(l6)
-        l6_dropout = tf.nn.dropout(l6, prob)
-        l7 = tf.add(tf.matmul(l6_dropout, hidden_7_layer['weights']), hidden_7_layer['biases'])
-        l7 = tf.nn.relu(l7)
-        l7_dropout = tf.nn.dropout(l7, prob)
-        l8 = tf.add(tf.matmul(l7_dropout, hidden_8_layer['weights']), hidden_8_layer['biases'])
-        l8 = tf.nn.relu(l8)
-        l8_dropout = tf.nn.dropout(l8, prob)
-        l9 = tf.add(tf.matmul(l8_dropout, hidden_9_layer['weights']), hidden_9_layer['biases'])
-        l9 = tf.nn.relu(l9)
-        l9_dropout = tf.nn.dropout(l9, prob)
-        l10 = tf.add(tf.matmul(l9_dropout, hidden_10_layer['weights']), hidden_10_layer['biases'])
-        l10 = tf.nn.relu(l10)
-        l10_dropout = tf.nn.dropout(l10, prob)
-        output = tf.matmul(l10_dropout, output_layer['weights']) +  output_layer['biases']
+        l2 = tf.nn.leaky_relu(l2, alpha=.5)
+        l3 = tf.add(tf.matmul(l2, hidden_3_layer['weights']), hidden_3_layer['biases'])
+        l3 = tf.nn.leaky_relu(l3, alpha=.5)
+        l4 = tf.add(tf.matmul(l3, hidden_4_layer['weights']), hidden_4_layer['biases'])
+        l4 = tf.nn.leaky_relu(l4, alpha=.5)
+        l5 = tf.add(tf.matmul(l4, hidden_5_layer['weights']), hidden_5_layer['biases'])
+        l5 = tf.nn.leaky_relu(l4, alpha=.5)
+        l6 = tf.add(tf.matmul(l5, hidden_6_layer['weights']), hidden_6_layer['biases'])
+        l6 = tf.nn.leaky_relu(l6, alpha=.5)
+        l7 = tf.add(tf.matmul(l6, hidden_7_layer['weights']), hidden_7_layer['biases'])
+        l7 = tf.nn.leaky_relu(l7, alpha=.5)
+        l8 = tf.add(tf.matmul(l7, hidden_8_layer['weights']), hidden_8_layer['biases'])
+        l8 = tf.nn.leaky_relu(l8, alpha=.5)
+        l9 = tf.add(tf.matmul(l8, hidden_9_layer['weights']), hidden_9_layer['biases'])
+        l9 = tf.nn.leaky_relu(l9, alpha=.5)
+        l10 = tf.add(tf.matmul(l9, hidden_10_layer['weights']), hidden_10_layer['biases'])
+        l10 = tf.nn.leaky_relu(l10)
+        l10_drop = tf.nn.dropout(l10, keep_prob=prob)
+        output = tf.add(tf.matmul(l10_drop , output_layer['weights']), output_layer['biases'])
         return output, prob
 
     def train_neural_network(self, epochs, optimizer, cost, x, y, sess, prediction, preprocessed = True):
@@ -153,7 +149,7 @@ class DNN_comment_classifier():
                     end = i + batch_size
                     batch_x = np.array(train_x[start:end])
                     batch_y = np.array(train_y[start:end])
-                    _, c = sess.run([optimizer, cost], feed_dict= {x:batch_x, y:batch_y, self.prob: 0.5})
+                    _, c = sess.run([optimizer, cost], feed_dict= {x:batch_x, y:batch_y, self.prob:.5})
                     epoch_loss += c
                     i += batch_size
                     logger.info("Batch {0} of epoch {1} completed, loss: {2}, time:{3}".format(i/batch_size, epoch, c, time.time() - start_time))
@@ -166,12 +162,25 @@ class DNN_comment_classifier():
             logger.info("Epoch {0} completed out of {1}, loss: {2}".format(epoch, hm_epochs,epoch_loss))
         correct = tf.equal(tf.argmax(prediction, 1), tf.argmax(y, 1))
         accuracy = tf.reduce_mean(tf.cast(correct, 'float'))
-        accuracy_float = accuracy.eval(session = sess, feed_dict = {x:test_x, y:test_y, self.prob: 1.0})
+        #accuracy_float = accuracy.eval(session = sess, feed_dict = {x:test_x, y:test_y, self.prob: 1.0})
+        accuracy_float = accuracy.eval(session = sess, feed_dict = {x:test_x, y:test_y, self.prob:1})
         logger.info(('Accuracy:', accuracy_float))
 
-
+        print('test set:')
         for i in test_x[:10]:
+            print(i.tolist())
             print(self.run_input(i))
+
+        print()
+        print()
+        print()
+        print('test set:')
+        for i in train_x[:10]:
+            print(i.tolist())
+            print(self.run_input(i))
+
+
+
         self.save_model()
         return sess, prediction, x, y
 
@@ -182,6 +191,7 @@ class DNN_comment_classifier():
             return None
 
     def create_feature_sets_and_labels(self, inputs, test_size = .01, preprocessed = False):
+        global sub_feature_dict
         random.shuffle(inputs)
         feature_list = []
         if not preprocessed:
@@ -194,7 +204,8 @@ class DNN_comment_classifier():
             for count, i in enumerate(inputs):
                 if count%1000 == 0:
                     logger.info('comment classifier proccessed {0} comments, invalid inputs:{1}, timestamp:{2}'.format(count,invalid_inputs, time.time()))
-                possible_input = np.concatenate((eval(i[0]), eval(i[1]), eval(i[2]), get_subreddit_features(i[3])))
+                sub_features = sub_feature_dict.setdefault(i[3], get_subreddit_features(i[3]))
+                possible_input = np.concatenate((eval(i[0]), eval(i[1]), eval(i[2]), sub_features))
                 possible_output = self.create_output_features(i)
                 if self.validate(possible_input, possible_output):
                     feature_list.append([possible_input, possible_output])
@@ -416,6 +427,17 @@ def get_word_count_feature(word_tokens):
         features[-1] = 1
     return features
 
+def softmax(x):
+    adj_x = []
+    for i in x:
+        if i >= 0:
+            adj_x.append(x)
+        else:
+            adj_x.append(0)
+    ex = np.exp(x)
+    sum_ex = np.sum( np.exp(x))
+    return ex/sum_ex
+
 #get parent, child, post data from db
 #allows user to only allow data from certai subreddits by passing list of elegible subreddit ids into it
 def get_db_input():
@@ -508,5 +530,6 @@ if __name__ == '__main__':
     dnn = DNN_comment_classifier(topics, retrain=True)
     dnn.train_nn(5)
     print('here')
+
 
 
