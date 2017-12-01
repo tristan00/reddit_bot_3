@@ -152,7 +152,7 @@ class RedditBot():
         logger.info('New data collected')
 
     #get a number of past post ids by sampling the full list, updates the data
-    def update_stored_posts(self, reddit_agent, num_of_posts=30):
+    def update_stored_posts(self, reddit_agent, num_of_posts=100):
         with sqlite3.connect('reddit.db') as conn:
             post_ids = conn.execute('select p_id from posts').fetchall()
             try:

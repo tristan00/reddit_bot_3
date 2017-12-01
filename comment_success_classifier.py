@@ -16,6 +16,7 @@ import operator
 import traceback
 import os
 import re
+import pandas as pd
 from topic_model import Reddit_LDA_Model
 
 logger = logging.getLogger(__name__)
@@ -24,7 +25,7 @@ logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=lo
 #TODO: store ngrams in db to allow model storing
 
 nodes_per_layer = 3000
-max_results_to_analyze = 1000
+max_results_to_analyze = 10000000
 stop_word_list = list(nltk.corpus.stopwords.words('english'))
 stop_word_set = set(stop_word_list)
 max_word_length_for_features = 10
@@ -39,15 +40,19 @@ max_n_gram = 4
 max_topic = 3
 subreddit_list = []
 model_save_location = 'models/comment_success_classifier_model_10L_final.ckpt'
+pos_tag_map = {'CC':1,'CD':2,'DT':3,'EX':4,'FW':5,'IN':6, 'JJ':7,'JJR':8,'JJS':9, 'LS':10,'MD':11,'NN':12, 'NNS':13, 'NNP':14, 'NNPS': 15,
+               'PDT':16, 'POS':17, 'PRP':18, 'PRP$':19,'RB':20,'RBR':21, 'RBS':22, 'RP':23, 'SYM':24, 'TO':25,'UH':26, 'VB':27, 'VBD':28, 'VBG':29, 'VBN':30,
+               'VBP':31, 'VBZ':32, 'WDT':33, 'WP':34, 'WP$':35, 'WRB':36}
 
 n_classes = num_of_score_buckets
 
 class DNN_comment_classifier():
     def __init__(self, topics, retrain = False):
         self.topics = topics
-        self.input_width = 1297+66
+        self.input_width = 1297+66 + (37*3)
         self.sentiment_memoization = {}
         self.topic_memoization = {}
+        self.pos_list = []
         self.retrain = retrain
         self.sub_list = get_subreddit_list()
         self.optimizer, self.cost, self.x, self.y, self.sess, self.prediction, self.saver, self.prob = self.build_neural_network()
@@ -59,7 +64,7 @@ class DNN_comment_classifier():
         print(model_results)
         adjusted_results = softmax(model_results)
         print(adjusted_results)
-        return sum(map(operator.mul, adjusted_results, self.bucket_avg))
+        return sum(map(operator.mul, model_results, self.bucket_avg))
 
     def train_nn(self, epochs):
         self.train_neural_network(epochs, self.optimizer, self.cost, self.x, self.y, self.sess, self.prediction)
@@ -69,7 +74,7 @@ class DNN_comment_classifier():
         y = tf.placeholder('float', [None, n_classes])
         prediction, prob = self.neural_network_model(nodes_per_layer, x)
         cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=prediction, labels=y))
-        optimizer = tf.train.AdamOptimizer().minimize(cost)
+        optimizer = tf.train.AdamOptimizer(learning_rate=.1).minimize(cost)
         saver = tf.train.Saver(tf.global_variables())
         sess = tf.Session()
         if self.retrain:
@@ -89,48 +94,28 @@ class DNN_comment_classifier():
                           'biases': tf.Variable(tf.random_normal([nodes_per_layer]))}
         hidden_5_layer = {'weights': tf.Variable(tf.random_normal([nodes_per_layer, nodes_per_layer])),
                           'biases': tf.Variable(tf.random_normal([nodes_per_layer]))}
-        hidden_6_layer = {'weights': tf.Variable(tf.random_normal([nodes_per_layer, nodes_per_layer])),
-                          'biases': tf.Variable(tf.random_normal([nodes_per_layer]))}
-        hidden_7_layer = {'weights': tf.Variable(tf.random_normal([nodes_per_layer, nodes_per_layer])),
-                          'biases': tf.Variable(tf.random_normal([nodes_per_layer]))}
-        hidden_8_layer = {'weights': tf.Variable(tf.random_normal([nodes_per_layer, nodes_per_layer])),
-                          'biases': tf.Variable(tf.random_normal([nodes_per_layer]))}
-        hidden_9_layer = {'weights': tf.Variable(tf.random_normal([nodes_per_layer, nodes_per_layer])),
-                          'biases': tf.Variable(tf.random_normal([nodes_per_layer]))}
-        hidden_10_layer = {'weights': tf.Variable(tf.random_normal([nodes_per_layer, nodes_per_layer])),
-                          'biases': tf.Variable(tf.random_normal([nodes_per_layer]))}
 
         output_layer = {'weights': tf.Variable(tf.random_normal([nodes_per_layer, n_classes])),
                             'biases': tf.Variable(tf.random_normal([n_classes]))}
 
         prob = tf.placeholder_with_default(1.0, shape=())
         l1 = tf.add(tf.matmul(x, hidden_1_layer['weights']), hidden_1_layer['biases'])
-        l1 = tf.nn.leaky_relu(l1, alpha=.5)
+        l1 = tf.nn.leaky_relu(l1)
         l2 = tf.add(tf.matmul(l1, hidden_2_layer['weights']), hidden_2_layer['biases'])
-        l2 = tf.nn.leaky_relu(l2, alpha=.5)
+        l2 = tf.nn.leaky_relu(l2)
         l3 = tf.add(tf.matmul(l2, hidden_3_layer['weights']), hidden_3_layer['biases'])
-        l3 = tf.nn.leaky_relu(l3, alpha=.5)
+        l3 = tf.nn.leaky_relu(l3)
         l4 = tf.add(tf.matmul(l3, hidden_4_layer['weights']), hidden_4_layer['biases'])
-        l4 = tf.nn.leaky_relu(l4, alpha=.5)
+        l4 = tf.nn.leaky_relu(l4)
         l5 = tf.add(tf.matmul(l4, hidden_5_layer['weights']), hidden_5_layer['biases'])
-        l5 = tf.nn.leaky_relu(l4, alpha=.5)
-        l6 = tf.add(tf.matmul(l5, hidden_6_layer['weights']), hidden_6_layer['biases'])
-        l6 = tf.nn.leaky_relu(l6, alpha=.5)
-        l7 = tf.add(tf.matmul(l6, hidden_7_layer['weights']), hidden_7_layer['biases'])
-        l7 = tf.nn.leaky_relu(l7, alpha=.5)
-        l8 = tf.add(tf.matmul(l7, hidden_8_layer['weights']), hidden_8_layer['biases'])
-        l8 = tf.nn.leaky_relu(l8, alpha=.5)
-        l9 = tf.add(tf.matmul(l8, hidden_9_layer['weights']), hidden_9_layer['biases'])
-        l9 = tf.nn.leaky_relu(l9, alpha=.5)
-        l10 = tf.add(tf.matmul(l9, hidden_10_layer['weights']), hidden_10_layer['biases'])
-        l10 = tf.nn.leaky_relu(l10)
-        l10_drop = tf.nn.dropout(l10, keep_prob=prob)
-        output = tf.add(tf.matmul(l10_drop , output_layer['weights']), output_layer['biases'])
+        l5 = tf.nn.leaky_relu(l5)
+        l5_drop = tf.nn.dropout(l5, keep_prob=prob)
+        output = tf.add(tf.matmul(l5_drop , output_layer['weights']), output_layer['biases'])
         return output, prob
 
     def train_neural_network(self, epochs, optimizer, cost, x, y, sess, prediction, preprocessed = True):
         start_time = time.time()
-        batch_size = 100
+        batch_size = 1000
         hm_epochs = epochs
         inputs = get_db_input()
         train_x, train_y, test_x, test_y = self.create_feature_sets_and_labels(inputs, preprocessed = preprocessed)
@@ -158,8 +143,14 @@ class DNN_comment_classifier():
                     list_batch = batch_x.tolist()
                     print(list_batch)
 
-
             logger.info("Epoch {0} completed out of {1}, loss: {2}".format(epoch, hm_epochs,epoch_loss))
+
+            print('test set:')
+            for i in test_x[:10]:
+                print(i.tolist())
+                print(self.run_input(i))
+
+
         correct = tf.equal(tf.argmax(prediction, 1), tf.argmax(y, 1))
         accuracy = tf.reduce_mean(tf.cast(correct, 'float'))
         #accuracy_float = accuracy.eval(session = sess, feed_dict = {x:test_x, y:test_y, self.prob: 1.0})
@@ -278,7 +269,10 @@ def preprocess_item(text, timestamp, topic_models):
     word_count_feature = get_word_count_feature(tokenized_comment)
     word_length_feature = get_word_length_feature(tokenized_comment)
     timestamp_features = create_timestamp_features(timestamp)
-    return topic_features + timestamp_features + word_count_feature + word_length_feature
+    pos_features = get_pos_tag_features(text)
+    #print(len(topic_features), len(word_count_feature), len(word_length_feature), len(timestamp_features), len(pos_features))
+    #print('here')
+    return topic_features + timestamp_features + word_count_feature + word_length_feature + pos_features
 
 def validate(input_len, input_features, out_put_features):
     if len(input_features) == input_len:
@@ -385,6 +379,14 @@ def get_score_bucket_average(num_of_buckets, score_list):
         border_values.append(np.percentile(score_list, 100*i/num_of_buckets))
     return border_values
 
+def get_pos_tag_features(input_text):
+    tokens = nltk.tokenize.word_tokenize(input_text)
+    pos_list = nltk.pos_tag(tokens)
+    pos_features = [0 for i in range(len(pos_tag_map.keys())+ 1)]
+    for i in pos_list:
+        pos_features[pos_tag_map.get(i[1], 0)] = 1
+    return pos_features
+
 def create_average_of_buckets(border_list, score_list):
     output_array = [[] for i in range(len(border_list) + 1)] #[0 for i in range(num_of_score_buckets)]
     for score in score_list:
@@ -431,12 +433,13 @@ def softmax(x):
     adj_x = []
     for i in x:
         if i >= 0:
-            adj_x.append(x)
+            adj_x.append(i)
         else:
             adj_x.append(0)
     ex = np.exp(x)
     sum_ex = np.sum( np.exp(x))
     return ex/sum_ex
+
 
 #get parent, child, post data from db
 #allows user to only allow data from certai subreddits by passing list of elegible subreddit ids into it
@@ -450,10 +453,25 @@ def get_db_input():
     join preprocessed_posts f on e.p_id = f.p_id
     order by a.submitted_timestamp desc''').fetchall()
     logger.info('len of input = {0}'.format(len(res)))
-
     random.shuffle(res)
     output =  res[:max_results_to_analyze]
     return output
+
+def get_db_input_to_pd():
+    with sqlite3.connect('reddit.db') as conn:
+        df = pd.read_sql_query('''select b.input, d.input, f.input, a.s_id, a.score
+    from comments a join preprocessed_comments b on a.c_id = b.c_id
+    join comments c on a.parent_id = c.c_id
+    join preprocessed_comments d on c.c_id = d.c_id
+    join posts e on a.p_id = e.p_id
+    join preprocessed_posts f on e.p_id = f.p_id
+    order by a.submitted_timestamp desc''')
+    logger.info('len of input = {0}'.format(df.size))
+
+    if df.size < max_results_to_analyze:
+        return df.sample(frac = 1)
+    else:
+        return df.sample(max_results_to_analyze)
 
 def preprocess_all_comments(topic_models):
     with sqlite3.connect('reddit.db') as conn:
@@ -494,7 +512,7 @@ def preprocess_all_posts(topic_models):
             try:
                 conn.execute('insert into preprocessed_posts values (?, ?)', (i[0], repr(preprocess_item(i[1], i[2], topic_models))))
             except sqlite3.IntegrityError:
-                conn.execute('update preprocessed_posts set input = ? where c_id = ?', (repr(preprocess_item(i[1], i[2], topic_models)), i[0]))
+                conn.execute('update preprocessed_posts set input = ? where p_id = ?', (repr(preprocess_item(i[1], i[2], topic_models)), i[0]))
         conn.commit()
 
 def preprocess_unprocessed_posts(topic_models):
@@ -526,9 +544,9 @@ if __name__ == '__main__':
         topics.append(Reddit_LDA_Model(i))
 
     preprocess_unprocessed_comments(topics)
-    preprocess_unprocessed_posts(topics)
+    preprocess_all_posts(topics)
     dnn = DNN_comment_classifier(topics, retrain=True)
-    dnn.train_nn(5)
+    dnn.train_nn(25)
     print('here')
 
 
