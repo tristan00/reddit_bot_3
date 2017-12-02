@@ -220,9 +220,9 @@ def get_subreddit_list():
 
 def main(iterations=100):
     #wipe_db()
+    time.sleep(14400)
     get_subreddit_list()
     bot = RedditBot()
-    bot.wipe_preprocessing_db()
     topics = []
     for i in [10, 50, 100, 200]:
         topics.append(Reddit_LDA_Model(i))

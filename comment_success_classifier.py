@@ -61,9 +61,6 @@ class DNN_comment_classifier():
 
     def run_input(self, i):
         model_results = self.sess.run(self.prediction, feed_dict = {self.x:[i], self.prob: 1})[0]
-        print(model_results)
-        adjusted_results = softmax(model_results)
-        print(adjusted_results)
         return sum(map(operator.mul, model_results, self.bucket_avg))
 
     def train_nn(self, epochs):
@@ -74,7 +71,7 @@ class DNN_comment_classifier():
         y = tf.placeholder('float', [None, n_classes])
         prediction, prob = self.neural_network_model(nodes_per_layer, x)
         cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=prediction, labels=y))
-        optimizer = tf.train.AdamOptimizer(learning_rate=.1).minimize(cost)
+        optimizer = tf.train.AdamOptimizer().minimize(cost)
         saver = tf.train.Saver(tf.global_variables())
         sess = tf.Session()
         if self.retrain:
@@ -109,8 +106,8 @@ class DNN_comment_classifier():
         l4 = tf.nn.leaky_relu(l4)
         l5 = tf.add(tf.matmul(l4, hidden_5_layer['weights']), hidden_5_layer['biases'])
         l5 = tf.nn.leaky_relu(l5)
-        l5_drop = tf.nn.dropout(l5, keep_prob=prob)
-        output = tf.add(tf.matmul(l5_drop , output_layer['weights']), output_layer['biases'])
+        l5_dropout = tf.nn.dropout(l5, prob)
+        output = tf.add(tf.matmul(l5_dropout , output_layer['weights']), output_layer['biases'])
         return output, prob
 
     def train_neural_network(self, epochs, optimizer, cost, x, y, sess, prediction, preprocessed = True):
@@ -124,8 +121,23 @@ class DNN_comment_classifier():
         del inputs[:]
         logger.info('input len: {0}'.format(len(train_x)))
         logger.info('starting training')
+        learning_log = []
+        output_log = []
+
+
+        correct = tf.equal(tf.argmax(prediction, 1), tf.argmax(y, 1))
+        accuracy = tf.reduce_mean(tf.cast(correct, 'float'))
+        accuracy_float = accuracy.eval(session = sess, feed_dict = {x:test_x, y:test_y, self.prob:1})
+        learning_log.append((0, accuracy_float, None))
+        output_log.append([0, self.run_input(test_x[0])])
 
         for epoch in range(hm_epochs):
+            print('learning log:')
+            for i in learning_log:
+                print(i)
+            print('output_log:')
+            for i in output_log:
+                print(i)
             epoch_loss = 0
             i=0
             while i < len(train_x):
@@ -137,18 +149,29 @@ class DNN_comment_classifier():
                     _, c = sess.run([optimizer, cost], feed_dict= {x:batch_x, y:batch_y, self.prob:.5})
                     epoch_loss += c
                     i += batch_size
-                    logger.info("Batch {0} of epoch {1} completed, loss: {2}, time:{3}".format(i/batch_size, epoch, c, time.time() - start_time))
+                    logger.info("Batch {0} of epoch {1} completed, loss: {2}, time:{3}".format(i/batch_size, epoch+1, c, time.time() - start_time))
                 except:
                     traceback.print_exc()
                     list_batch = batch_x.tolist()
                     print(list_batch)
 
-            logger.info("Epoch {0} completed out of {1}, loss: {2}".format(epoch, hm_epochs,epoch_loss))
+            logger.info("Epoch {0} completed out of {1}, loss: {2}".format(epoch+1, hm_epochs,epoch_loss))
+            correct = tf.equal(tf.argmax(prediction, 1), tf.argmax(y, 1))
+            accuracy = tf.reduce_mean(tf.cast(correct, 'float'))
+            #accuracy_float = accuracy.eval(session = sess, feed_dict = {x:test_x, y:test_y, self.prob: 1.0})
+            accuracy_float = accuracy.eval(session = sess, feed_dict = {x:test_x, y:test_y, self.prob:1})
+            learning_log.append((epoch+1, accuracy_float, epoch_loss))
+            output_log.append([epoch+1, self.run_input(test_x[0])])
 
-            print('test set:')
-            for i in test_x[:10]:
-                print(i.tolist())
-                print(self.run_input(i))
+        print('learning log:')
+        for i in learning_log:
+            print(i)
+        print('output_log:')
+        for i in output_log:
+            print(i)
+
+
+
 
 
         correct = tf.equal(tf.argmax(prediction, 1), tf.argmax(y, 1))
@@ -156,22 +179,6 @@ class DNN_comment_classifier():
         #accuracy_float = accuracy.eval(session = sess, feed_dict = {x:test_x, y:test_y, self.prob: 1.0})
         accuracy_float = accuracy.eval(session = sess, feed_dict = {x:test_x, y:test_y, self.prob:1})
         logger.info(('Accuracy:', accuracy_float))
-
-        print('test set:')
-        for i in test_x[:10]:
-            print(i.tolist())
-            print(self.run_input(i))
-
-        print()
-        print()
-        print()
-        print('test set:')
-        for i in train_x[:10]:
-            print(i.tolist())
-            print(self.run_input(i))
-
-
-
         self.save_model()
         return sess, prediction, x, y
 
@@ -544,9 +551,9 @@ if __name__ == '__main__':
         topics.append(Reddit_LDA_Model(i))
 
     preprocess_unprocessed_comments(topics)
-    preprocess_all_posts(topics)
+    preprocess_unprocessed_posts(topics)
     dnn = DNN_comment_classifier(topics, retrain=True)
-    dnn.train_nn(25)
+    dnn.train_nn(50)
     print('here')
 
 
