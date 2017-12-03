@@ -112,9 +112,10 @@ class DNN_comment_classifier():
 
     def train_neural_network(self, epochs, optimizer, cost, x, y, sess, prediction, preprocessed = True):
         start_time = time.time()
-        batch_size = 1000
+        batch_size = 10000
         hm_epochs = epochs
-        inputs = get_db_input_to_pd()
+        #inputs = get_db_input_to_pd()
+        inputs = get_db_input()
         train_x, train_y, test_x, test_y = self.create_feature_sets_and_labels(inputs, preprocessed = preprocessed)
 
         logger.info('got inputs')
@@ -190,15 +191,13 @@ class DNN_comment_classifier():
         feature_list = []
 
         invalid_inputs = 0
-        for count, i in enumerate(inputs.itertuples()):
-            adjusted_i = i[1:]
+        for count, i in enumerate(inputs):
             if count%1000 == 0:
                 logger.info('comment classifier proccessed {0} comments, invalid inputs:{1}, timestamp:{2}'.format(count,invalid_inputs, time.time()))
-            sub_features = sub_feature_dict.setdefault(adjusted_i[3], get_subreddit_features(adjusted_i[3]))
+            sub_features = sub_feature_dict.setdefault(i[3], get_subreddit_features(i[3]))
             print(sub_features)
-            print(adjusted_i)
-            possible_input = np.concatenate((eval(adjusted_i[0]), eval(adjusted_i[1]), eval(adjusted_i[2]), sub_features))
-            possible_output = self.create_output_features(adjusted_i)
+            possible_input = np.concatenate((eval(i[0]), eval(i[1]), eval(i[2]), sub_features))
+            possible_output = self.create_output_features(i)
             if self.validate(possible_input, possible_output):
                 feature_list.append([possible_input, possible_output])
             else:
@@ -545,10 +544,10 @@ if __name__ == '__main__':
     for i in [10, 50, 100, 200]:
         topics.append(Reddit_LDA_Model(i))
 
-    preprocess_all_comments(topics)
-    preprocess_all_posts(topics)
+    preprocess_unprocessed_comments(topics)
+    preprocess_unprocessed_posts(topics)
     dnn = DNN_comment_classifier(topics, retrain=True)
-    dnn.train_nn(50)
+    dnn.train_nn(100)
     print('here')
 
 
