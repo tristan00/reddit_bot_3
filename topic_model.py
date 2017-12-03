@@ -45,13 +45,13 @@ class Reddit_LDA_Model():
             self.lda = gensim.models.ldamodel.LdaModel(self.corpus, num_topics=self.num_of_topics)
             self.lda.save(lda_model_location.format(self.num_of_topics))
 
-    def get_topic(self, text, minimum_probability = .01, tokenized=False):
+    def get_topic(self, text, tokenized=False):
         if tokenized:
             text_bow = self.dictionary.doc2bow(text)
-            return self.lda.get_document_topics(text_bow)
+            return self.lda.get_document_topics(text_bow, minimum_probability=1/self.num_of_topics)
         else:
             text_bow = self.dictionary.doc2bow(clean_and_tokenize(text))
-            return self.lda.get_document_topics(text_bow)
+            return self.lda.get_document_topics(text_bow, minimum_probability=1/self.num_of_topics)
 
 def clean_and_tokenize(input_text):
     clean_text = remove_punctuation_from_text(input_text.lower())

@@ -25,7 +25,7 @@ logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=lo
 #TODO: store ngrams in db to allow model storing
 
 nodes_per_layer = 3000
-max_results_to_analyze = 10000000
+max_results_to_analyze = 1000
 stop_word_list = list(nltk.corpus.stopwords.words('english'))
 stop_word_set = set(stop_word_list)
 max_word_length_for_features = 10
@@ -33,7 +33,7 @@ max_word_count_for_features = 10
 word_count_bucket_size = 4
 sub_feature_dict = {}
 
-num_of_score_buckets = 10
+num_of_score_buckets = 4
 num_of_features_per_n = 100
 min_n_gram = 2
 max_n_gram = 4
@@ -114,7 +114,7 @@ class DNN_comment_classifier():
         start_time = time.time()
         batch_size = 1000
         hm_epochs = epochs
-        inputs = get_db_input()
+        inputs = get_db_input_to_pd()
         train_x, train_y, test_x, test_y = self.create_feature_sets_and_labels(inputs, preprocessed = preprocessed)
 
         logger.info('got inputs')
@@ -171,9 +171,6 @@ class DNN_comment_classifier():
             print(i)
 
 
-
-
-
         correct = tf.equal(tf.argmax(prediction, 1), tf.argmax(y, 1))
         accuracy = tf.reduce_mean(tf.cast(correct, 'float'))
         #accuracy_float = accuracy.eval(session = sess, feed_dict = {x:test_x, y:test_y, self.prob: 1.0})
@@ -190,26 +187,23 @@ class DNN_comment_classifier():
 
     def create_feature_sets_and_labels(self, inputs, test_size = .01, preprocessed = False):
         global sub_feature_dict
-        random.shuffle(inputs)
         feature_list = []
-        if not preprocessed:
-            for count, i in enumerate(inputs):
-                if count%1000 == 0:
-                    logger.info('comment classifier proccessed {0} comments, timestamp:{1}'.format(count, time.time()))
-                feature_list.append([create_input_features(i, self.topics), self.create_output_features(i)])
-        else:
-            invalid_inputs = 0
-            for count, i in enumerate(inputs):
-                if count%1000 == 0:
-                    logger.info('comment classifier proccessed {0} comments, invalid inputs:{1}, timestamp:{2}'.format(count,invalid_inputs, time.time()))
-                sub_features = sub_feature_dict.setdefault(i[3], get_subreddit_features(i[3]))
-                possible_input = np.concatenate((eval(i[0]), eval(i[1]), eval(i[2]), sub_features))
-                possible_output = self.create_output_features(i)
-                if self.validate(possible_input, possible_output):
-                    feature_list.append([possible_input, possible_output])
-                else:
-                    invalid_inputs += 1
-            print('invalid inputs:', invalid_inputs)
+
+        invalid_inputs = 0
+        for count, i in enumerate(inputs.itertuples()):
+            adjusted_i = i[1:]
+            if count%1000 == 0:
+                logger.info('comment classifier proccessed {0} comments, invalid inputs:{1}, timestamp:{2}'.format(count,invalid_inputs, time.time()))
+            sub_features = sub_feature_dict.setdefault(adjusted_i[3], get_subreddit_features(adjusted_i[3]))
+            print(sub_features)
+            print(adjusted_i)
+            possible_input = np.concatenate((eval(adjusted_i[0]), eval(adjusted_i[1]), eval(adjusted_i[2]), sub_features))
+            possible_output = self.create_output_features(adjusted_i)
+            if self.validate(possible_input, possible_output):
+                feature_list.append([possible_input, possible_output])
+            else:
+                invalid_inputs += 1
+        print('invalid inputs:', invalid_inputs)
         testing_size = int(test_size*len(inputs))
         train_x = [i[0] for i in feature_list[testing_size:]]
         train_y = [i[1] for i in feature_list[testing_size:]]
@@ -472,7 +466,7 @@ def get_db_input_to_pd():
     join preprocessed_comments d on c.c_id = d.c_id
     join posts e on a.p_id = e.p_id
     join preprocessed_posts f on e.p_id = f.p_id
-    order by a.submitted_timestamp desc''')
+    order by a.submitted_timestamp desc''', conn)
     logger.info('len of input = {0}'.format(df.size))
 
     if df.size < max_results_to_analyze:
@@ -488,6 +482,7 @@ def preprocess_all_comments(topic_models):
             if count %10000 == 0:
                 conn.commit()
                 logger.info('{0} comments preprocessed'.format(count))
+                print(i)
             try:
                 conn.execute('insert into preprocessed_comments values (?, ?)', (i[0], repr(preprocess_item(i[1], i[2], topic_models))))
             except sqlite3.IntegrityError:
@@ -550,8 +545,8 @@ if __name__ == '__main__':
     for i in [10, 50, 100, 200]:
         topics.append(Reddit_LDA_Model(i))
 
-    preprocess_unprocessed_comments(topics)
-    preprocess_unprocessed_posts(topics)
+    preprocess_all_comments(topics)
+    preprocess_all_posts(topics)
     dnn = DNN_comment_classifier(topics, retrain=True)
     dnn.train_nn(50)
     print('here')
