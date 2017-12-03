@@ -25,7 +25,7 @@ logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=lo
 #TODO: store ngrams in db to allow model storing
 
 nodes_per_layer = 3000
-max_results_to_analyze = 1000
+max_results_to_analyze = 10000000
 stop_word_list = list(nltk.corpus.stopwords.words('english'))
 stop_word_set = set(stop_word_list)
 max_word_length_for_features = 10
@@ -91,6 +91,8 @@ class DNN_comment_classifier():
                           'biases': tf.Variable(tf.random_normal([nodes_per_layer]))}
         hidden_5_layer = {'weights': tf.Variable(tf.random_normal([nodes_per_layer, nodes_per_layer])),
                           'biases': tf.Variable(tf.random_normal([nodes_per_layer]))}
+        hidden_6_layer = {'weights': tf.Variable(tf.random_normal([nodes_per_layer, nodes_per_layer])),
+                          'biases': tf.Variable(tf.random_normal([nodes_per_layer]))}
 
         output_layer = {'weights': tf.Variable(tf.random_normal([nodes_per_layer, n_classes])),
                             'biases': tf.Variable(tf.random_normal([n_classes]))}
@@ -106,8 +108,10 @@ class DNN_comment_classifier():
         l4 = tf.nn.leaky_relu(l4)
         l5 = tf.add(tf.matmul(l4, hidden_5_layer['weights']), hidden_5_layer['biases'])
         l5 = tf.nn.leaky_relu(l5)
-        l5_dropout = tf.nn.dropout(l5, prob)
-        output = tf.add(tf.matmul(l5_dropout , output_layer['weights']), output_layer['biases'])
+        l6 = tf.add(tf.matmul(l5, hidden_5_layer['weights']), hidden_5_layer['biases'])
+        l6 = tf.nn.leaky_relu(l6)
+        l6_dropout = tf.nn.dropout(l6, prob)
+        output = tf.add(tf.matmul(l6_dropout , output_layer['weights']), output_layer['biases'])
         return output, prob
 
     def train_neural_network(self, epochs, optimizer, cost, x, y, sess, prediction, preprocessed = True):
@@ -195,7 +199,6 @@ class DNN_comment_classifier():
             if count%1000 == 0:
                 logger.info('comment classifier proccessed {0} comments, invalid inputs:{1}, timestamp:{2}'.format(count,invalid_inputs, time.time()))
             sub_features = sub_feature_dict.setdefault(i[3], get_subreddit_features(i[3]))
-            print(sub_features)
             possible_input = np.concatenate((eval(i[0]), eval(i[1]), eval(i[2]), sub_features))
             possible_output = self.create_output_features(i)
             if self.validate(possible_input, possible_output):
